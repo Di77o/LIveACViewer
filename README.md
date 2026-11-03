@@ -125,7 +125,8 @@ Use HTTPS hosting for reliable iPhone camera and share support; ordinary HTTP LA
 Install Node.js **24.5 or newer** and npm:
 
 ```sh
-npm ci
+ONNXRUNTIME_NODE_INSTALL=skip npm ci
+npm run model:fetch
 npm run dev
 ```
 
@@ -168,7 +169,7 @@ This produces `exports/hosted/index.html` with images and fonts embedded, so it 
 npm run build:local
 ```
 
-Open the generated `exports/LiveAC-Studio.html` in ordinary desktop Chrome. It contains the app, fonts, sample room and product photos, and supports manual editing/export without a server or Internet connection. AI is explicitly unavailable in this edition. The downloadable ZIP also includes opening instructions in `START-HERE.txt`.
+Open the generated `exports/LiveAC-Studio.html` in ordinary desktop Chrome. It contains the app, fonts, sample room and product photos, and supports manual editing/export without a server or Internet connection. Automatic wall detection and AI are explicitly unavailable in this edition. The downloadable ZIP also includes opening instructions in `START-HERE.txt`.
 
 The managed cloud browser blocks direct `file://` navigation by administrator policy. The standalone test loads the exact generated HTML into an offline browser page instead; it does not bypass that policy. Run `node scripts/test-standalone.mjs` to check the embedded assets and local interactions.
 
@@ -194,25 +195,43 @@ Tests cover photo validation, API request/response handling with a mocked provid
 
 Desktop and iPhone-sized Chromium viewports are covered. Mocked AI tests do not establish live provider readiness. Live OpenAI calls require a configured credential; physical iPhone camera/share behavior needs device testing. The app keeps uploaded photos in memory for the editing session and does not persist them in a database.
 
-## Local vision detector (no API key)
+## Fast wall detector (no API key, no Ollama)
 
-Update your checkout and start the optional local AI profile:
+The default Docker app now includes **INT8 UPerNet / ConvNeXt-Tiny**, an ADE20K semantic segmentation model running in ONNX Runtime on CPU. It identifies wall pixels and fits up to three conservative, editable quadrilaterals to connected wall regions. The largest suitable region is overlaid immediately after **Find wall**; customers can drag the corners, choose another region when available, redraw, or inspect **Show detected wall area**. No language-model generation or local AI profile is required.
+
+Update from the older Ollama version:
 
 ```sh
 git pull
-docker compose --profile local-ai up --build -d
-docker compose logs -f model-setup
+docker compose up --build -d --remove-orphans
 ```
 
-Wait for the model download to finish, then open http://localhost:3001 and choose **Detect locally**. The first setup downloads Ollama and the Qwen2.5-VL 3B vision model (several GB). A CPU works; allow several minutes per analysis, and start with about 16 GB available system RAM. Actual speed depends on your PC. The model is stored in a persistent Docker volume. Internet is needed for the initial download; subsequent inference runs on your machine. The model service has no published host port. The app asks for consent before sending your photo to that local service. OpenAI remains a separate, optional cloud feature.
+The checkout includes the pinned 61 MB ONNX model (the first Git pull/clone downloads it). Docker verifies its SHA-256 and includes it in the resulting image; runtime inference needs no network access. Old Ollama/model-setup containers are removed as orphans by this command; downloaded Ollama volumes are not deleted. See `models/SOURCES.md` for provenance, checksums, preprocessing and third-party licensing. The quantized mask overlapped the FP32 mask by 0.85–0.94 IoU on its three calibration images; this comparison is not independent real-world accuracy. The app's private-use license is separate from the model's MIT terms.
 
-Stop the full stack with `docker compose --profile local-ai down`. Do not add `-v` unless you intend to delete downloaded model data. Use `docker compose logs --tail=80 ollama model-setup` to diagnose model download/startup failures. Local model inference quality varies; invalid corners are rejected and no-wall results remain possible. The local model integration has automated mocked-provider coverage; end-to-end inference with downloaded weights has not yet been verified in this cloud environment.
+The app warms the model at startup. The server includes the model before accepting customer photos; customers do not download weights into their browser. `/api/local-status` reports `loading`, `ready`, `missing` or `error`. The site remains usable while it loads. CPU threading defaults to 2 and can be tuned with `WALL_CPU_THREADS` in `.env`. A request already in progress gets a clear busy response rather than an unbounded queue. Photos are downsampled to 512×512 for detection and are not stored or logged. This detector does not estimate centimetres from pixels.
+
+### Speed and quality validation
+
+The INT8 pipeline measured 0.84 seconds median and 1.04 seconds slowest across nine warm runs on three public interiors, with a separate 1.29-second startup/warmup. A real browser-to-Docker request on the bundled sample completed detector work in 1.72 seconds, including a recompressed photo. These observations use two inference threads on the cloud development machine; they are not a latency guarantee for your PC. The earlier FP32 version had much larger latency spikes under contention and was not retained as the default. See `docs/wall-benchmark.json` for reproducible multi-image measurements and resource notes. Run:
+
+```sh
+npm run model:fetch
+npm run benchmark:wall -- --manifest tests/fixtures/rooms/manifest.json --output docs/wall-benchmark.json
+```
+
+**No 90% accuracy or customer-acceptance rate is claimed.** Semantic wall segmentation is not 3D plane reconstruction: adjacent walls can merge, wood/mirrors can be misclassified, furniture hides edges, and a detected wall is not necessarily an obstruction-free installation location. No reliable region yields a manual-marking fallback instead of an invented full-photo rectangle. The Gallery proportion lock remains enabled.
+
+The checked-in photographs are only a small speed/smoke-test set. To evaluate a 90% acceptance target, collect consented representative customer rooms, have reviewers mark acceptable wall quads (and no-wall cases), reserve a held-out test set, and measure both correction-free acceptance and p95 latency. The benchmark accepts optional `expected` (`wall`/`no-wall`) and `referencePlane` labels. Its coarse plane-IoU >= 0.5 metric is an engineering check, not customer acceptance or pixel accuracy. Human review is still needed.
+
+### Development without Docker
+
+Use `ONNXRUNTIME_NODE_INSTALL=skip npm ci` in Git Bash/macOS/Linux to install the bundled CPU runtime without optional CUDA packages. In PowerShell, first set `$env:ONNXRUNTIME_NODE_INSTALL="skip"`, then run `npm ci`. Run `npm run model:fetch` once, then `npm run dev`. Windows, macOS and Linux CPU binaries are supplied by ONNX Runtime. The fetch script uses the configured proxy and TLS trust, pins the model revision and rejects checksum mismatches.
 
 ### Scale and Gallery proportions
 
 **Keep original unit proportions** is enabled by default: Gallery artwork remains square and other units retain their manufacturer's front-view ratio, while their center and orientation follow the wall. This is a proportion-preserving illustration, not full projective foreshortening. Disable this option only when you deliberately want the full wall projection and have supplied suitable wall dimensions.
 
-A photo alone has no unique metric scale. The local detector may suggest a broad **low-confidence** wall-width range from assumed object sizes; it must be applied explicitly. For a more useful estimate, mark a wall, enter the measured width of a horizontal object on that same wall (for example, a window), choose **Mark reference ends**, and tap both ends at the same wall height. The app rectifies those points to the plane and derives the marked wall width. A mistaken plane or measurement still introduces error. Wall height is an independent input and is not determined by that horizontal reference.
+A photo alone has no unique metric scale. The fast segmentation model intentionally does not guess physical wall width. For a more useful estimate, mark a wall, enter the measured width of a horizontal object on that same wall (for example, a window), choose **Mark reference ends**, and tap both ends at the same wall height. The app rectifies those points to the plane and derives the marked wall width. A mistaken plane or measurement still introduces error. Wall height is an independent input and is not determined by that horizontal reference.
 
 ## License
 

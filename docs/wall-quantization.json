@@ -1,0 +1,35 @@
+{
+  "baseSHA256": "fea729ab6c5d338bc79ad3d986b073e6faa12c97255eafd78a1f7145326e534e",
+  "sha256": "44ac510412833bf5e3e8586e6b9cba247b94e4251894e054597ebbd02de47d3f",
+  "bytes": 61157068,
+  "calibration": "Three public room photographs; calibration-set comparison is not independent accuracy validation.",
+  "results": [
+    {
+      "image": "public/sample-room.jpg",
+      "wallMaskIoUVsFP32": 0.9387543968549555,
+      "int8Ms": [
+        1820,
+        1790,
+        1789
+      ]
+    },
+    {
+      "image": "tests/fixtures/rooms/open-plan.jpg",
+      "wallMaskIoUVsFP32": 0.8519210245464247,
+      "int8Ms": [
+        1994,
+        2403,
+        2128
+      ]
+    },
+    {
+      "image": "tests/fixtures/rooms/living-room.jpg",
+      "wallMaskIoUVsFP32": 0.9316508937960042,
+      "int8Ms": [
+        1777,
+        1732,
+        1596
+      ]
+    }
+  ]
+}

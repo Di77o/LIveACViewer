@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ApiError, placementSchema, validateDetectedWall, validatePhoto, validatePlacement, validateRequest, wallDetectionSchema } from './validation.js';
 
-import { detectLocalWall, localModel, localUrl } from './local-vision.js';
+import { detectLocalWall, detectorStatus, warmDetector } from './local-vision.js';
 
 export const app = express();
 app.disable('x-powered-by');
@@ -115,15 +115,7 @@ app.post('/api/recommend', async (req, res, next) => {
   }
 });
 
-app.get('/api/local-status', async (_req,res) => {
-  const url=localUrl();
-  if(!url) {res.json({available:false,model:localModel()});return;}
-  try {
-    const result=await fetch(`${url}/api/tags`,{signal:AbortSignal.timeout(4000)});
-    const body=await result.json() as {models?:{name:string}[]};
-    res.json({available:result.ok&&Boolean(body.models?.some(m=>m.name===localModel())),model:localModel()});
-  } catch {res.json({available:false,model:localModel()});}
-});
+app.get('/api/local-status',(_req,res)=>{res.json(detectorStatus());});
 let localBusy=false;
 app.post('/api/local-detect-wall',async(req,res,next)=>{
   try {
@@ -202,6 +194,7 @@ const errorHandler: ErrorRequestHandler = (error: unknown, _req, res, _next) => 
 app.use(errorHandler);
 
 if (process.env.NODE_ENV !== 'test') {
+  void warmDetector().catch((error:Error)=>console.warn('Wall detector:',error.message));
   const port = Number(process.env.PORT || 3001);
   app.listen(port, '0.0.0.0', () => console.log(`Wall preview server listening on port ${port}. AI ${apiKey() ? 'configured' : 'not configured'}.`));
 }

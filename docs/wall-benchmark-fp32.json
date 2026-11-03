@@ -1,0 +1,100 @@
+{
+  "model": "UPerNet / ConvNeXt-Tiny, CPU, 512px",
+  "warmupMs": 7926,
+  "threads": "2",
+  "p50Ms": 5544,
+  "p95Ms": 32051,
+  "labelledCases": 0,
+  "passed": 0,
+  "metric": "Coarse suggested-plane IoU >= 0.5 against hand-marked reference quad (not pixel accuracy or installation suitability). Small fixtures are smoke tests, not evidence of 90% customer acceptance.",
+  "results": [
+    {
+      "image": "public/sample-room.jpg",
+      "warmMs": [
+        9120,
+        32051,
+        18328
+      ],
+      "planeFound": true,
+      "planeIoU": null,
+      "success": null,
+      "corners": [
+        {
+          "x": 0,
+          "y": 0.0546875
+        },
+        {
+          "x": 0.890625,
+          "y": 0.0078125
+        },
+        {
+          "x": 0.8046875,
+          "y": 0.4921875
+        },
+        {
+          "x": 0,
+          "y": 0.625
+        }
+      ]
+    },
+    {
+      "image": "tests/fixtures/rooms/open-plan.jpg",
+      "warmMs": [
+        5481,
+        5544,
+        5513
+      ],
+      "planeFound": true,
+      "planeIoU": null,
+      "success": null,
+      "corners": [
+        {
+          "x": 0.6953125,
+          "y": 0.1953125
+        },
+        {
+          "x": 1,
+          "y": 0
+        },
+        {
+          "x": 1,
+          "y": 0.8828125
+        },
+        {
+          "x": 0.4453125,
+          "y": 0.484375
+        }
+      ]
+    },
+    {
+      "image": "tests/fixtures/rooms/living-room.jpg",
+      "warmMs": [
+        8065,
+        3422,
+        2457
+      ],
+      "planeFound": true,
+      "planeIoU": null,
+      "success": null,
+      "corners": [
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 1,
+          "y": 0
+        },
+        {
+          "x": 0.7421875,
+          "y": 0.5390625
+        },
+        {
+          "x": 0.140625,
+          "y": 0.5390625
+        }
+      ]
+    }
+  ],
+  "resourceNote": "FP32 development baseline; background builds/host contention caused substantial variability. Do not interpret it as a controlled comparative benchmark."
+}

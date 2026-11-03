@@ -7,7 +7,6 @@ docs
 tests
 test-results
 playwright-report
-scripts
 **/*.test.ts
 .env
 .env.*
@@ -15,3 +14,8 @@ scripts
 *.log
 README.md
 compose*.yaml
+
+models/*.onnx
+models/*.download
+
+!models/wall-segmentation-int8.onnx

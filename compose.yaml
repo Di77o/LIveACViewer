@@ -6,10 +6,8 @@ services:
     ports:
       - "${LIVEAC_BIND_ADDRESS:-127.0.0.1}:${LIVEAC_PORT:-3001}:3001"
     environment:
-      NO_PROXY: localhost,127.0.0.1,ollama
       PORT: "3001"
-      OLLAMA_URL: http://ollama:11434
-      OLLAMA_MODEL: "${OLLAMA_MODEL:-qwen2.5vl:3b}"
+      WALL_CPU_THREADS: "${WALL_CPU_THREADS:-2}"
       AC_OPENAI_API_KEY: "${AC_OPENAI_API_KEY:-}"
       AC_OPENAI_MODEL: "${AC_OPENAI_MODEL:-gpt-4.1-mini}"
     init: true
@@ -21,33 +19,3 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-  ollama:
-    image: ollama/ollama:0.12.11
-    profiles: [local-ai]
-    volumes:
-      - ollama-models:/root/.ollama
-    restart: unless-stopped
-    environment:
-      OLLAMA_HOST: 0.0.0.0:11434
-      NO_PROXY: localhost,127.0.0.1,0.0.0.0,ollama
-      OLLAMA_NUM_PARALLEL: "1"
-      OLLAMA_MAX_LOADED_MODELS: "1"
-    healthcheck:
-      test: [CMD, ollama, list]
-      interval: 10s
-      timeout: 5s
-      retries: 30
-  model-setup:
-    image: ollama/ollama:0.12.11
-    profiles: [local-ai]
-    depends_on:
-      ollama:
-        condition: service_healthy
-    environment:
-      OLLAMA_HOST: http://ollama:11434
-      NO_PROXY: localhost,127.0.0.1,ollama
-    entrypoint: ["/bin/ollama"]
-    command: ["pull", "${OLLAMA_MODEL:-qwen2.5vl:3b}"]
-    restart: "no"
-volumes:
-  ollama-models:

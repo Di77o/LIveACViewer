@@ -7,3 +7,7 @@ playwright-report/
 test-results/
 *.log
 exports/
+models/*.onnx
+models/*.download
+
+!models/wall-segmentation-int8.onnx

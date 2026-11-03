@@ -1,0 +1,105 @@
+{
+  "model": "UPerNet / ConvNeXt-Tiny INT8, CPU, 512px",
+  "warmupMs": 1291,
+  "threads": "2",
+  "p50Ms": 835,
+  "p95Ms": 1036,
+  "labelledCases": 0,
+  "passed": 0,
+  "metric": "Coarse suggested-plane IoU >= 0.5 against hand-marked reference quad (not pixel accuracy or installation suitability). Small fixtures are smoke tests, not evidence of 90% customer acceptance.",
+  "results": [
+    {
+      "image": "public/sample-room.jpg",
+      "warmMs": [
+        1036,
+        864,
+        899
+      ],
+      "planeFound": true,
+      "planeIoU": null,
+      "success": null,
+      "corners": [
+        {
+          "x": 0,
+          "y": 0.0546875
+        },
+        {
+          "x": 0.890625,
+          "y": 0.0078125
+        },
+        {
+          "x": 0.8046875,
+          "y": 0.4921875
+        },
+        {
+          "x": 0,
+          "y": 0.625
+        }
+      ]
+    },
+    {
+      "image": "tests/fixtures/rooms/open-plan.jpg",
+      "warmMs": [
+        849,
+        815,
+        827
+      ],
+      "planeFound": true,
+      "planeIoU": null,
+      "success": null,
+      "corners": [
+        {
+          "x": 0.421875,
+          "y": 0.4375
+        },
+        {
+          "x": 1,
+          "y": 0
+        },
+        {
+          "x": 1,
+          "y": 0.21875
+        },
+        {
+          "x": 0.71875,
+          "y": 0.6640625
+        }
+      ]
+    },
+    {
+      "image": "tests/fixtures/rooms/living-room.jpg",
+      "warmMs": [
+        824,
+        822,
+        835
+      ],
+      "planeFound": true,
+      "planeIoU": null,
+      "success": null,
+      "corners": [
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 1,
+          "y": 0
+        },
+        {
+          "x": 0.859375,
+          "y": 0.4921875
+        },
+        {
+          "x": 0.0703125,
+          "y": 0.640625
+        }
+      ]
+    }
+  ],
+  "hardware": {
+    "platform": "linux",
+    "arch": "x64",
+    "cpu": "INTEL(R) XEON(R) PLATINUM 8573C",
+    "availableParallelism": 4
+  }
+}

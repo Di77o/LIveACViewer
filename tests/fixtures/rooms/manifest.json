@@ -1,0 +1,5 @@
+[
+  {"image":"public/sample-room.jpg"},
+  {"image":"tests/fixtures/rooms/open-plan.jpg"},
+  {"image":"tests/fixtures/rooms/living-room.jpg"}
+]
