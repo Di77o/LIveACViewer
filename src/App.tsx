@@ -3,6 +3,8 @@ import type { PointerEvent as ReactPointerEvent } from 'react';
 import { ArrowDownToLine, ArrowRight, ArrowUpRight, Camera, Check, ChevronDown, Expand, Eye, EyeOff, ImagePlus, Info, Leaf, LoaderCircle, Move, RotateCcw, ShieldCheck, Sparkles, Upload, Wind, X } from 'lucide-react';
 import { models, type ACModel } from './data/catalog';
 import Unit3DOverlay, {unitBodyColor} from './components/Unit3DOverlay';
+import {getUnitDesign} from './lib/unit-model-design';
+import {loadUnitTextures} from './lib/unit-textures';
 import {projectUnit3D,drawUnit3D,type Unit3DProjection} from './lib/unit-3d';
 import { widthFromReference } from './lib/reference-scale';
 import { proportionalUnit } from './lib/proportional-unit';
@@ -67,7 +69,7 @@ export default function App() {
   const drag = useRef<{ pointer: number; startX: number; startY: number; original: Position } | null>(null);
   const aspect = photo.width / photo.height;
   let depthProjection:Unit3DProjection|null=null;
-  if(wallPlane&&useDepth){try{depthProjection=projectUnit3D(wallPlane,position,selected,photo.width,photo.height,cameraView===null?{}:{fovDegrees:cameraView});}catch{/* Fall back to the proportion-preserving illustration if the estimate degenerates. */}}
+  if(wallPlane&&useDepth){try{depthProjection=projectUnit3D(wallPlane,position,selected,photo.width,photo.height,{casingProfile:getUnitDesign(selected).sideProfile,...(cameraView===null?{}:{fovDegrees:cameraView})});}catch{/* Fall back to the proportion-preserving illustration if the estimate degenerates. */}}
   const anchored = wallPlane&&preserveProportions?proportionalUnit(wallPlane,position,aspect):null;
   const displayPosition=anchored||position;
   const planeAspect = Math.max(100, wallWidth) / Math.max(100, wallHeight);
@@ -270,7 +272,7 @@ export default function App() {
         const top = position.y * image.naturalHeight - h / 2;
         ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.25)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 7;
         const unitImage=await loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(unitSvg(selected))}`);
-        if(depthProjection){ctx.shadowColor='transparent';drawUnit3D(ctx,unitImage,depthProjection,image.naturalWidth,image.naturalHeight,{bodyColor:unitBodyColor(selected)});}
+        if(depthProjection){const textures=await loadUnitTextures(selected);ctx.shadowColor='transparent';drawUnit3D(ctx,textures.front,depthProjection,image.naturalWidth,image.naturalHeight,{bodyColor:unitBodyColor(selected),sideTextures:textures.sides});}
         else if(wallPlane&&!preserveProportions) drawProjectedImage(ctx,unitImage,wallPlane,position,selected.heightMm/selected.widthMm*planeAspect,image.naturalWidth,image.naturalHeight);
         else if(anchored){const aw=anchored.width*image.naturalWidth;const ah=aw*selected.heightMm/selected.widthMm;ctx.translate(anchored.x*image.naturalWidth,anchored.y*image.naturalHeight);ctx.rotate(anchored.angle);ctx.drawImage(unitImage,-aw/2,-ah/2,aw,ah);}
         else if (selected.imageUrl) ctx.drawImage(unitImage, left, top, w, h);

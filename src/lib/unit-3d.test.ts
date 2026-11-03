@@ -1,5 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {projectUnit3D,cssQuadTransform} from './unit-3d';
+import {getUnitDesign} from './unit-model-design';
 import {homographyForPlane,type WallPlane} from './wall-plane';
 const flat:WallPlane=[{x:.1,y:.1},{x:.9,y:.1},{x:.9,y:.9},{x:.1,y:.9}];
 const angled:WallPlane=[{x:.2,y:.12},{x:.9,y:.06},{x:.85,y:.82},{x:.23,y:.72}];
@@ -10,3 +11,6 @@ test('unit projects along the same horizontal vanishing point as the selected wa
 test('body depth changes front/side projection and leaves wall anchor fixed',()=>{const a=projectUnit3D(angled,position,gallery,1600,1200,{depthScale:0}),b=projectUnit3D(angled,position,gallery,1600,1200);assert.deepEqual(a.center,b.center);assert.deepEqual(a.back,b.back);assert.notDeepEqual(a.front,b.front);assert.equal(a.sides.length,0);assert.ok(b.sides.length>0);});
 test('viewport scaling preserves normalized 3D geometry and tiny faces can be textured',()=>{const a=projectUnit3D(angled,position,gallery,1600,1200),b=projectUnit3D(angled,position,gallery,800,600);for(let i=0;i<4;i++){assert.ok(Math.abs(a.front[i].x-b.front[i].x)<1e-10);assert.ok(Math.abs(a.front[i].y-b.front[i].y)<1e-10);}assert.match(cssQuadTransform(a.front,800,600),/^matrix3d\(/);});
 test('manual view angle and invalid inputs are handled explicitly',()=>{assert.equal(projectUnit3D(flat,position,gallery,1600,1200,{fovDegrees:65}).camera.source,'manual');assert.throws(()=>projectUnit3D(flat,position,gallery,0,1200));assert.throws(()=>projectUnit3D(flat,position,gallery,1600,1200,{fovDegrees:180}));});
+
+test('profiled casing replaces flat box sides with depth stations and keeps their texture coordinates',()=>{const model={widthMm:935,heightMm:307,depthMm:235,id:'artcool-mirror',visualVariant:'mirror' as const};const design=getUnitDesign(model);const p=projectUnit3D(angled,position,model,1600,1200,{casingProfile:design.sideProfile});assert.ok(p.sides.length>2);for(const side of p.sides){assert.ok(side.face);assert.ok(side.depthStart!>=0&&side.depthEnd!<=1&&side.depthEnd!>side.depthStart!);for(const point of side.points){assert.ok(point.x>=p.bounds.left-1e-10&&point.x<=p.bounds.left+p.bounds.width+1e-10);assert.ok(point.y>=p.bounds.top-1e-10&&point.y<=p.bounds.top+p.bounds.height+1e-10);}}});
+test('invalid casing stations cannot deform the product dimensions',()=>{assert.throws(()=>projectUnit3D(angled,position,gallery,1600,1200,{casingProfile:[{depthFraction:0,topInsetMm:0,bottomInsetMm:0,sideInsetMm:0},{depthFraction:1,topInsetMm:1000,bottomInsetMm:0,sideInsetMm:0}]}));});

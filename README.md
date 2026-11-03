@@ -246,3 +246,7 @@ With a wall marked, **3D unit depth** is enabled by default. The unit is represe
 The camera is estimated from orthogonal vanishing directions when stable, otherwise a 55° horizontal view is assumed. **Adjust the camera view** lets you correct it. A single photo cannot determine a unique camera or measured room depth; corners, lens distortion and hidden boundaries all affect the result. This is visual planning, not a measured 3D room survey. The preview and exported JPEG use the same projected faces. No WebGL/GPU is required for this lightweight mesh projection.
 
 Disable **3D unit depth** to return to the earlier proportion-preserving illustration or flat wall projection. Dimension-based bodies/front textures are illustrative. Verified official Revit download links, matching family names, and conversion/embedding limitations are documented in [LG 3D assets](docs/LG-3D-ASSETS.md). Actual manufacturer CAD files have not been bundled without confirmed web-embedding rights.
+
+## Separate model and placement work
+
+The model-quality and wall/selection-box tasks are tracked independently in [development tracks](docs/DEVELOPMENT-TRACKS.md). The high-DPI canvas correction is separate from the newer family casing/texture changes. Models now include depth-station profiles and textured sides/undersides rather than only flat box faces; [model notes](docs/MODEL-QUALITY.md) distinguish sourced dimensions from illustrative details. The registration suite reads real canvas pixels across desktop/phone pixel ratios so new model artwork cannot hide placement errors.
