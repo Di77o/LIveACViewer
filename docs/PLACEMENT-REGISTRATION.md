@@ -32,3 +32,10 @@ Screenshots are saved in each Playwright test's output directory.
 
 Initial verification: all eight desktop/phone × DPR cases passed before the
 separate model-detail and casing-geometry changes.
+
+A temporary browser-only override restoring `width:auto;height:auto` reproduced
+the old defect on the phone at DPR 2: the photo measured 351 × 263.25 CSS pixels
+while the canvas measured 702 × 527. Actual painted pixels began 136.58 CSS pixels
+to the right and 69.38 pixels below the selection's top-left corner. The new
+pixel assertion failed as expected. The override and temporary proof test were
+removed afterward.
