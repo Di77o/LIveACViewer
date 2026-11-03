@@ -4,6 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ApiError, placementSchema, validateDetectedWall, validatePhoto, validatePlacement, validateRequest, wallDetectionSchema } from './validation.js';
 
+import { detectLocalWall, localModel, localUrl } from './local-vision.js';
+
 export const app = express();
 app.disable('x-powered-by');
 app.use('/api', (_req, res, next) => {
@@ -111,6 +113,25 @@ app.post('/api/recommend', async (req, res, next) => {
       next(new ApiError(504, 'AI_TIMEOUT', 'The AI took too long to respond. Please try again.'));
     } else next(error);
   }
+});
+
+app.get('/api/local-status', async (_req,res) => {
+  const url=localUrl();
+  if(!url) {res.json({available:false,model:localModel()});return;}
+  try {
+    const result=await fetch(`${url}/api/tags`,{signal:AbortSignal.timeout(4000)});
+    const body=await result.json() as {models?:{name:string}[]};
+    res.json({available:result.ok&&Boolean(body.models?.some(m=>m.name===localModel())),model:localModel()});
+  } catch {res.json({available:false,model:localModel()});}
+});
+let localBusy=false;
+app.post('/api/local-detect-wall',async(req,res,next)=>{
+  try {
+    const photo=validatePhoto(req.body,true);
+    if(localBusy) throw new ApiError(429,'LOCAL_AI_BUSY','The local model is already analysing a photo. Please wait.');
+    localBusy=true;
+    try {res.json({wall:await detectLocalWall(photo.image)});} finally {localBusy=false;}
+  } catch(error){next(error);}
 });
 
 app.post('/api/detect-wall', async (req, res, next) => {

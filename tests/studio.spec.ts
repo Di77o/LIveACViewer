@@ -65,6 +65,7 @@ test('manual pointer dragging moves the unit and leaves it inside the photo', as
 });
 
 test('unconfigured AI reports the missing connection without uploading a photo', async ({ page }) => {
+  await page.route('**/api/health', route => route.fulfill({json:{ok:true,aiConfigured:false}}));
   let uploads = 0;
   page.on('request', request => { if (request.url().endsWith('/api/recommend')) uploads += 1; });
   await page.goto('/');

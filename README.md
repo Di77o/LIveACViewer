@@ -193,3 +193,27 @@ npm run test:e2e
 Tests cover photo validation, API request/response handling with a mocked provider, missing AI configuration, plane geometry, placement and browser interactions. Browser tests use system Chromium at `/usr/bin/chromium`; set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to use another installed Chromium. They start the development servers automatically unless those are already running.
 
 Desktop and iPhone-sized Chromium viewports are covered. Mocked AI tests do not establish live provider readiness. Live OpenAI calls require a configured credential; physical iPhone camera/share behavior needs device testing. The app keeps uploaded photos in memory for the editing session and does not persist them in a database.
+
+## Local vision detector (no API key)
+
+Update your checkout and start the optional local AI profile:
+
+```sh
+git pull
+docker compose --profile local-ai up --build -d
+docker compose logs -f model-setup
+```
+
+Wait for the model download to finish, then open http://localhost:3001 and choose **Detect locally**. The first setup downloads Ollama and the Qwen2.5-VL 3B vision model (several GB). A CPU works; allow several minutes per analysis, and start with about 16 GB available system RAM. Actual speed depends on your PC. The model is stored in a persistent Docker volume. Internet is needed for the initial download; subsequent inference runs on your machine. The model service has no published host port. The app asks for consent before sending your photo to that local service. OpenAI remains a separate, optional cloud feature.
+
+Stop the full stack with `docker compose --profile local-ai down`. Do not add `-v` unless you intend to delete downloaded model data. Use `docker compose logs --tail=80 ollama model-setup` to diagnose model download/startup failures. Local model inference quality varies; invalid corners are rejected and no-wall results remain possible. The local model integration has automated mocked-provider coverage; end-to-end inference with downloaded weights has not yet been verified in this cloud environment.
+
+### Scale and Gallery proportions
+
+**Keep original unit proportions** is enabled by default: Gallery artwork remains square and other units retain their manufacturer's front-view ratio, while their center and orientation follow the wall. This is a proportion-preserving illustration, not full projective foreshortening. Disable this option only when you deliberately want the full wall projection and have supplied suitable wall dimensions.
+
+A photo alone has no unique metric scale. The local detector may suggest a broad **low-confidence** wall-width range from assumed object sizes; it must be applied explicitly. For a more useful estimate, mark a wall, enter the measured width of a horizontal object on that same wall (for example, a window), choose **Mark reference ends**, and tap both ends at the same wall height. The app rectifies those points to the plane and derives the marked wall width. A mistaken plane or measurement still introduces error. Wall height is an independent input and is not determined by that horizontal reference.
+
+## License
+
+This update uses the custom [Private, Non-Commercial Use License](LICENSE). Private personal use and modification are allowed; commercial/professional use, public redistribution, and public hosted copies require prior written permission. Third-party assets keep their own terms. Earlier versions released under the Unlicense keep their previously granted rights.

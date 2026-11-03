@@ -1,24 +1,37 @@
-This is free and unencumbered software released into the public domain.
+LiveAC Studio — Private, Non-Commercial Use License
+Version 1.0, 2026-11-03
+Copyright (c) 2026 Di77o. All rights reserved.
 
-Anyone is free to copy, modify, publish, use, compile, sell, or
-distribute this software, either in source code form or as a compiled
-binary, for any purpose, commercial or non-commercial, and by any
-means.
+1. Permission
+The copyright holder grants you a limited, non-exclusive license to download,
+run, and modify this software solely for your own private, personal,
+non-commercial use.
 
-In jurisdictions that recognize copyright laws, the author or authors
-of this software dedicate any and all copyright interest in the
-software to the public domain. We make this dedication for the benefit
-of the public at large and to the detriment of our heirs and
-successors. We intend this dedication to be an overt act of
-relinquishment in perpetuity of all present and future rights to this
-software under copyright law.
+2. Restrictions
+Without prior written permission from the copyright holder, you may not:
+- use this software for commercial, business, professional, revenue-generating,
+  or other monetary-advantage purposes, including customer demonstrations;
+- sell, rent, sublicense, publicly redistribute, or publish copies or modified
+  versions of the software;
+- provide the software as a public or commercial hosted service.
+Sharing privately generated room-preview images for personal planning is
+permitted. No trademark rights are granted.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
-OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
-ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-OTHER DEALINGS IN THE SOFTWARE.
+3. Scope and third-party material
+This license covers only material the copyright holder has the right to license.
+Third-party software, fonts, imagery, and trademarks retain their respective
+licenses and ownership. This license does not revoke rights validly granted
+under earlier licenses for earlier versions. GitHub users retain any rights
+provided by GitHub's applicable terms of service.
 
-For more information, please refer to <https://unlicense.org>
+4. Warranty and liability
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
+NONINFRINGEMENT. TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE COPYRIGHT HOLDER
+IS NOT LIABLE FOR CLAIMS, DAMAGES, OR OTHER LIABILITY ARISING FROM ITS USE.
+The software is a visualization aid, not installation or engineering advice.
+
+5. Termination
+Permissions under this license terminate automatically if you violate its
+terms. Commercial use or broader distribution requires a separate written
+agreement with the copyright holder via the project's GitHub repository.

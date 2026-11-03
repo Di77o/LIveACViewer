@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { ArrowDownToLine, ArrowRight, ArrowUpRight, Camera, Check, ChevronDown, Expand, Eye, EyeOff, ImagePlus, Info, Leaf, LoaderCircle, Move, RotateCcw, ShieldCheck, Sparkles, Upload, Wind, X } from 'lucide-react';
 import { models, type ACModel } from './data/catalog';
+import { widthFromReference } from './lib/reference-scale';
+import { proportionalUnit } from './lib/proportional-unit';
 import WallOverlay from './components/WallOverlay';
 import { mapToWall, validateWallPlane, wallTransform, type Point, type WallPlane } from './lib/wall-plane';
 import { drawProjectedImage } from './lib/projective-canvas';
@@ -10,7 +12,7 @@ import { approximateWidth, constrainPosition, unitHeight, type Position } from '
 import { loadImage, preparePhoto } from './lib/photo';
 
 type Recommendation = Position & { summary: string; reasoning: string[]; warnings: string[]; confidence: 'low' | 'medium' | 'high' };
-type WallSuggestion = { corners: WallPlane | null; confidence: 'low'|'medium'|'high'; summary: string; warnings: string[] };
+type WallSuggestion = { corners: WallPlane | null; confidence: 'low'|'medium'|'high'; summary: string; warnings: string[]; widthGuess?: {minCm:number;maxCm:number;basis:string}|null };
 type Photo = { src: string; width: number; height: number; isSample: boolean; name: string };
 const staticHosted = Boolean((window as Window & { __LIVEAC_STATIC__?: boolean }).__LIVEAC_STATIC__);
 const localMode = staticHosted || window.location.protocol === 'file:' || Boolean((window as Window & { __LIVEAC_LOCAL__?: boolean }).__LIVEAC_LOCAL__);
@@ -24,14 +26,19 @@ function Unit({ model, className = '' }: { model: ACModel; className?: string })
 export default function App() {
   const [selected, setSelected] = useState(models[0]);
   const [photo, setPhoto] = useState<Photo>(sample);
+  const [preserveProportions,setPreserveProportions]=useState(true);
   const [wallWidth, setWallWidth] = useState(420);
+  const [referencePoints,setReferencePoints]=useState<Point[]|null>(null);
+  const [referenceCm,setReferenceCm]=useState(90);
+  const [localReady,setLocalReady]=useState(false);
+  const [scaleSource,setScaleSource]=useState('Manual estimate');
   const [wallHeight, setWallHeight] = useState(250);
   const [wallPlane, setWallPlane] = useState<WallPlane | null>(null);
   const [draftCorners, setDraftCorners] = useState<Point[]>([]);
   const [markingWall, setMarkingWall] = useState(false);
   const [wallSuggestion, setWallSuggestion] = useState<WallSuggestion | null>(null);
   const [stageSize, setStageSize] = useState({width: 1, height: 1});
-  const [consentTask, setConsentTask] = useState<'placement'|'wall'>('placement');
+  const [consentTask, setConsentTask] = useState<'placement'|'wall'|'local'>('placement');
   const [position, setPosition] = useState<Position>({ x: 0.4, y: 0.094, width: approximateWidth(models[0].widthMm, 420) });
   const [showUnit, setShowUnit] = useState(true);
   const [expanded, setExpanded] = useState(false);
@@ -49,8 +56,11 @@ export default function App() {
   const photoVersion = useRef(0);
   const drag = useRef<{ pointer: number; startX: number; startY: number; original: Position } | null>(null);
   const aspect = photo.width / photo.height;
+  const anchored = wallPlane&&preserveProportions?proportionalUnit(wallPlane,position,aspect):null;
+  const displayPosition=anchored||position;
   const planeAspect = Math.max(100, wallWidth) / Math.max(100, wallHeight);
-  const height = unitHeight(position.width, selected.widthMm, selected.heightMm, wallPlane ? planeAspect : aspect);
+  const height = unitHeight(position.width, selected.widthMm, selected.heightMm, wallPlane&&!preserveProportions ? planeAspect : aspect);
+  const displayHeight=anchored?unitHeight(anchored.width,selected.widthMm,selected.heightMm,aspect):height;
   useEffect(() => {
     if (!stage.current) return;
     const observer = new ResizeObserver(entries => { const rect = entries[0].contentRect; if(rect.width && rect.height) setStageSize({width:rect.width,height:rect.height}); });
@@ -60,6 +70,7 @@ export default function App() {
 
   useEffect(() => {
     if (localMode) return;
+    fetch('/api/local-status').then(r=>r.json()).then(d=>setLocalReady(d.available===true)).catch(()=>{});
     const controller = new AbortController();
     fetch('/api/health', { signal: controller.signal }).then(r => { if (!r.ok) throw new Error(); return r.json(); }).then(data => setAiConfigured(data.aiConfigured)).catch(() => {});
     return () => controller.abort();
@@ -103,11 +114,18 @@ export default function App() {
     setNotice('Wall plane set. The unit now follows its perspective. Drag the numbered corners to refine it.');
   }
   function clearPlane() {
-    setWallPlane(null); setWallSuggestion(null); setMarkingWall(false); setDraftCorners([]); setRecommendation(null);
+    setReferencePoints(null);setWallPlane(null); setWallSuggestion(null); setMarkingWall(false); setDraftCorners([]); setRecommendation(null);
     setPosition(constrainPosition({x:.5,y:.22,width:approximateWidth(selected.widthMm,wallWidth)},selected.widthMm,selected.heightMm,aspect));
   }
   function markCorner(event: React.MouseEvent<HTMLDivElement>) {
-    if (!markingWall || busy || !stage.current) return;
+    if(busy||!stage.current)return;
+    if(referencePoints!==null&&wallPlane){
+      const rect=stage.current.getBoundingClientRect();
+      const next=[...referencePoints,{x:(event.clientX-rect.left)/rect.width,y:(event.clientY-rect.top)/rect.height}];
+      if(next.length===2){try{const width=widthFromReference(wallPlane,next as [Point,Point],referenceCm);setWallWidth(width);setScaleSource('Measured horizontal reference');setPosition(constrainPosition({...position,width:approximateWidth(selected.widthMm,width)},selected.widthMm,selected.heightMm,width/Math.max(100,wallHeight)));setReferencePoints(null);setNotice(`Wall width estimated from your reference: ${width} cm.`);}catch(e){setError(e instanceof Error?e.message:'Check your reference.');setReferencePoints([]);}}else setReferencePoints(next);
+      return;
+    }
+    if (!markingWall) return;
     const rect=stage.current.getBoundingClientRect();
     const next=[...draftCorners,{x:(event.clientX-rect.left)/rect.width,y:(event.clientY-rect.top)/rect.height}];
     if(next.length===4) {
@@ -115,7 +133,8 @@ export default function App() {
       else setError('Mark a clear rectangle in this order: top left, top right, bottom right, bottom left. Corners must not cross. Try the final corner again or start over.');
     } else setDraftCorners(next);
   }
-  function beginAi(task: 'placement'|'wall') {
+  function beginAi(task: 'placement'|'wall'|'local') {
+    if(task==='local'){if(localMode){setError('Local detection requires the Docker version. Your photo has not been sent.');return;}setConsentTask('local');setConsent(true);return;}
     if(aiConfigured===false) {
       setError(staticHosted ? 'AI isn’t connected on this version. Mark your wall manually and save your preview. Your photo has not been sent.' : localMode ? 'AI analysis needs the hosted or Docker version with an AI connection. This local file supports manual wall marking, placement and saving previews. Your photo has not been sent.' : 'AI placement isn’t connected yet. You can explore manually while the site owner connects the recommendation service. Your photo has not been sent.');
       return;
@@ -144,7 +163,7 @@ export default function App() {
       const next = await preparePhoto(file);
       photoVersion.current += 1;
       setPhoto({ ...next, name: file.name, isSample: false });
-      setWallPlane(null);setMarkingWall(false);setDraftCorners([]);setWallSuggestion(null);
+      setWallPlane(null);setMarkingWall(false);setDraftCorners([]);setWallSuggestion(null);setReferencePoints(null);setScaleSource('Manual estimate');
       setPosition(constrainPosition({ x: 0.5, y: 0.22, width: approximateWidth(selected.widthMm, wallWidth) }, selected.widthMm, selected.heightMm, next.width / next.height));
       setRecommendation(null); setRecommendationApplied(false); setShowUnit(true);
       setNotice('Your room is ready. Drag the unit to explore a position.');
@@ -180,21 +199,21 @@ export default function App() {
     setRecommendationApplied(false);
   }
   async function requestRecommendation() {
-    setConsent(false); setBusy(consentTask==='wall'?'wall':'ai'); setError('');
+    setConsent(false); setBusy(consentTask!=='placement'?'wall':'ai'); setError('');
     const version = photoVersion.current;
     try {
       const image = photo.src.startsWith('data:') ? photo.src : await (async () => {
         const response = await fetch(photo.src);
         return (await preparePhoto(new File([await response.blob()], 'room.jpg', { type: 'image/jpeg' }))).src;
       })();
-      const response = await fetch(consentTask==='wall'?'/api/detect-wall':'/api/recommend', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(55_000),
+      const response = await fetch(consentTask==='local'?'/api/local-detect-wall':consentTask==='wall'?'/api/detect-wall':'/api/recommend', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(consentTask==='local'?250_000:55_000),
         body: JSON.stringify({ image, model: { name: selected.name, widthMm: selected.widthMm, heightMm: selected.heightMm, depthMm: selected.depthMm }, wallWidthCm: wallWidth, ...(wallPlane ? {wallCorners:wallPlane} : {}), imageWidth: photo.width, imageHeight: photo.height }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'We could not assess this photo. Please try again.');
       if (version !== photoVersion.current) return;
-      if(consentTask==='wall') { setWallSuggestion(result.wall); setMarkingWall(false); setNotice('Review the detected wall corners before using them.'); return; }
+      if(consentTask!=='placement') { setWallSuggestion(result.wall); setMarkingWall(false); setNotice('Review the detected wall corners before using them.'); return; }
       setRecommendation(result.placement); setRecommendationApplied(false);
       setNotice('Your recommendation is ready to review.');
     } catch (error) { setError(error instanceof Error && error.name === 'TimeoutError' ? 'The recommendation took too long. Please try again.' : error instanceof Error ? error.message : 'Could not connect to the recommendation service.'); }
@@ -216,7 +235,8 @@ export default function App() {
         const top = position.y * image.naturalHeight - h / 2;
         ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.25)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 7;
         const unitImage=await loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(unitSvg(selected))}`);
-        if(wallPlane) drawProjectedImage(ctx,unitImage,wallPlane,position,selected.heightMm/selected.widthMm*planeAspect,image.naturalWidth,image.naturalHeight);
+        if(wallPlane&&!preserveProportions) drawProjectedImage(ctx,unitImage,wallPlane,position,selected.heightMm/selected.widthMm*planeAspect,image.naturalWidth,image.naturalHeight);
+        else if(anchored){const aw=anchored.width*image.naturalWidth;const ah=aw*selected.heightMm/selected.widthMm;ctx.translate(anchored.x*image.naturalWidth,anchored.y*image.naturalHeight);ctx.rotate(anchored.angle);ctx.drawImage(unitImage,-aw/2,-ah/2,aw,ah);}
         else if (selected.imageUrl) ctx.drawImage(unitImage, left, top, w, h);
         else { ctx.fillStyle = selected.finish.toLowerCase().includes('black') ? '#323432' : '#f3f1ec'; ctx.beginPath(); ctx.roundRect(left, top, w, h, 5); ctx.fill(); }
         ctx.restore();
@@ -258,15 +278,16 @@ export default function App() {
           <div className="workspace-bar"><div className="room-title"><span className="live-dot" />{photo.isSample ? 'A little inspiration' : 'Your room'}<span className="sample-tag">{photo.isSample ? 'EXAMPLE ROOM' : 'YOUR PHOTO'}</span></div><div className="workspace-actions"><button className="icon-button" title="Reset placement" aria-label="Reset placement" onClick={resetPosition} disabled={!!busy}><RotateCcw size={16} /></button><button className="icon-button" title={showUnit ? 'View original room' : 'Show unit'} aria-label={showUnit ? 'View original room' : 'Show unit'} onClick={() => setShowUnit(!showUnit)}>{showUnit ? <Eye size={17} /> : <EyeOff size={17} />}</button><span className="toolbar-divider"/><button className="icon-button" title="Expand preview" aria-label="Expand preview" onClick={() => setExpanded(true)}><Expand size={16} /></button></div></div>
           <div className={expanded ? 'preview-expanded' : ''}>
             {expanded && <button className="close-expanded icon-button" aria-label="Close expanded preview" onClick={() => setExpanded(false)}><X /></button>}
-            <div ref={stage} className={`room-stage ${busy === 'ai' || busy==='wall' ? 'analyzing' : ''} ${markingWall?'marking-wall':''}`} onClick={markCorner} style={{ aspectRatio: `${photo.width} / ${photo.height}`, ...(expanded ? { width: `min(92vw, calc((100dvh - 120px) * ${aspect}))` } : {}) }}>
+            <div ref={stage} className={`room-stage ${busy === 'ai' || busy==='wall' ? 'analyzing' : ''} ${markingWall||referencePoints!==null?'marking-wall':''}`} onClick={markCorner} style={{ aspectRatio: `${photo.width} / ${photo.height}`, ...(expanded ? { width: `min(92vw, calc((100dvh - 120px) * ${aspect}))` } : {}) }}>
               <img className="room-photo" src={photo.src} alt={photo.isSample ? 'Example sunlit living room with a clear wall above the gallery of photographs' : 'Your uploaded room'} draggable={false} />
-              <div className="unit-plane" style={{ transform: wallPlane ? wallTransform(wallPlane,stageSize.width,stageSize.height) : 'none' }}>
-              {showUnit && <div className={`placed-unit ${markingWall?'unit-marking':''}`} role="button" tabIndex={0} aria-label="Air conditioner placement. Drag to move, or use arrow keys." style={{ left: `${position.x * 100}%`, top: `${position.y * 100}%`, width: `${position.width * 100}%`, height: `${height * 100}%` }} onPointerDown={dragStart} onPointerMove={dragMove} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} onKeyDown={event => {
+              <div className="unit-plane" style={{ transform: wallPlane&&!preserveProportions ? wallTransform(wallPlane,stageSize.width,stageSize.height) : 'none' }}>
+              {showUnit && <div className={`placed-unit ${markingWall||referencePoints!==null?'unit-marking':''}`} role="button" tabIndex={0} aria-label="Air conditioner placement. Drag to move, or use arrow keys." style={{ left: `${displayPosition.x * 100}%`, top: `${displayPosition.y * 100}%`, width: `${displayPosition.width * 100}%`, height: `${displayHeight * 100}%`, transform: `translate(-50%,-50%) rotate(${anchored?.angle||0}rad)` }} onPointerDown={dragStart} onPointerMove={dragMove} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} onKeyDown={event => {
                 const deltas: Record<string, [number, number]> = { ArrowLeft: [-.01, 0], ArrowRight: [.01, 0], ArrowUp: [0, -.01], ArrowDown: [0, .01] };
                 if (deltas[event.key]) { event.preventDefault(); const [x, y] = deltas[event.key]; setPosition(old => clamp({ ...old, x: old.x + x, y: old.y + y })); setRecommendationApplied(false); }
               }}><UnitArtwork model={selected} /><span className="unit-handle"><Move size={11} /></span></div>}
               </div>
               <WallOverlay plane={wallPlane} draft={draftCorners} marking={markingWall} suggestion={wallSuggestion?.corners||null} onChange={plane=>{setWallPlane(plane);setRecommendation(null);}} />
+              {referencePoints!==null&&<div className="marking-instruction" role="status">Tap {referencePoints.length?'the other':'the first'} end of your horizontal reference</div>}
               {markingWall && <div className="marking-instruction" role="status">Tap corner {draftCorners.length+1}: {['top left','top right','bottom right','bottom left'][draftCorners.length]}</div>}
               <div className="photo-label"><span /> LIVE PREVIEW</div>
               <div className="photo-watermark">liveac<span> / {photo.isSample ? 'the possibilities' : 'your space'}</span></div>
@@ -276,8 +297,10 @@ export default function App() {
           <div className="placement-toolbar"><span className="drag-hint"><Move size={15} /> Drag the unit to find your fit</span><div className="size-control"><label htmlFor="unit-size">Visual size</label><input id="unit-size" type="range" min="8" max="55" value={Math.round(position.width * 100)} onChange={e => changeWidth(Number(e.target.value) / 100)} disabled={!!busy} /><span>{Math.round(position.width * 100)}%</span></div></div>
           <section className="wall-tools" aria-label="Wall perspective tools">
             <div className="wall-tools-title"><Move size={16}/><div><strong>{wallPlane?'Anchored to your wall':'Give your wall a little perspective.'}</strong><p>{markingWall?'Mark a visible rectangle: top left → top right → bottom right → bottom left.':wallPlane?'Drag the numbered corners to refine the plane. Units follow the wall’s angle.':'Mark four wall corners, or ask AI for a starting point you can adjust.'}</p></div>{wallPlane&&<span className="plane-active"><Check size={11}/> PLANE SET</span>}</div>
-            <div className="wall-tools-actions">{markingWall?<><button className="button button-secondary" onClick={()=>setDraftCorners(old=>old.slice(0,-1))} disabled={!draftCorners.length}>Undo corner</button><button className="button button-secondary" onClick={()=>{setMarkingWall(false);setDraftCorners([]);}}>Cancel marking</button></>:<><button className="button button-secondary" onClick={()=>{setMarkingWall(true);setDraftCorners([]);setWallSuggestion(null);}} disabled={!!busy}><Move size={14}/>{wallPlane?'Redraw wall':'Mark wall'}</button><button className="button button-secondary" onClick={()=>beginAi('wall')} disabled={!!busy}>{busy==='wall'?<LoaderCircle className="spin" size={14}/>:<Sparkles size={14}/>}Detect wall with AI</button>{wallPlane&&<button className="text-button" onClick={clearPlane}>Remove plane</button>}</>}</div>
-            {wallSuggestion&&<div className="wall-suggestion"><strong>Review detected wall · {wallSuggestion.confidence} confidence</strong><p>{wallSuggestion.summary}</p>{wallSuggestion.warnings.map((warning,i)=><p key={i}>{warning}</p>)}<div>{wallSuggestion.corners&&<button className="button button-primary" onClick={()=>applyPlane(wallSuggestion.corners!)}>Use detected wall</button>}<button className="button button-secondary" onClick={()=>setWallSuggestion(null)}>Dismiss</button></div></div>}
+            <div className="wall-tools-actions">{markingWall?<><button className="button button-secondary" onClick={()=>setDraftCorners(old=>old.slice(0,-1))} disabled={!draftCorners.length}>Undo corner</button><button className="button button-secondary" onClick={()=>{setMarkingWall(false);setDraftCorners([]);}}>Cancel marking</button></>:<><button className="button button-secondary" onClick={()=>{setMarkingWall(true);setDraftCorners([]);setWallSuggestion(null);}} disabled={!!busy}><Move size={14}/>{wallPlane?'Redraw wall':'Mark wall'}</button><button className="button button-secondary" onClick={()=>beginAi('local')} disabled={!!busy}><Sparkles size={14}/>Detect locally</button><button className="button button-secondary" onClick={()=>beginAi('wall')} disabled={!!busy}>{busy==='wall'?<LoaderCircle className="spin" size={14}/>:<Sparkles size={14}/>}Detect wall with AI</button>{wallPlane&&<button className="text-button" onClick={clearPlane}>Remove plane</button>}</>}</div>
+            {wallPlane&&<label className="proportion-toggle"><input type="checkbox" checked={preserveProportions} onChange={e=>setPreserveProportions(e.target.checked)}/>Keep original unit proportions <span>(recommended; Gallery stays square)</span></label>}
+            {!localMode&&<p className="local-detector-note">{localReady?'Local vision model ready · no API key needed':'Local vision: start Docker with the local-ai profile. First use downloads the model.'}</p>}
+            {wallSuggestion&&<div className="wall-suggestion"><strong>Review detected wall · {wallSuggestion.confidence} confidence</strong><p>{wallSuggestion.summary}</p>{wallSuggestion.warnings.map((warning,i)=><p key={i}>{warning}</p>)}{wallSuggestion.widthGuess&&<div className="width-guess"><strong>Rough width guess: {wallSuggestion.widthGuess.minCm}–{wallSuggestion.widthGuess.maxCm} cm · low confidence</strong><p>{wallSuggestion.widthGuess.basis}</p><p>Object sizes are assumed. Use a measured reference for a dependable scale.</p><button className="button button-secondary" onClick={()=>{const width=Math.round((wallSuggestion.widthGuess!.minCm+wallSuggestion.widthGuess!.maxCm)/2);setWallWidth(width);setScaleSource('AI guess — low confidence');setPosition(constrainPosition({...position,width:approximateWidth(selected.widthMm,width)},selected.widthMm,selected.heightMm,wallPlane?width/Math.max(100,wallHeight):aspect));}}>Use range midpoint as a rough scale</button></div>}<div>{wallSuggestion.corners&&<button className="button button-primary" onClick={()=>applyPlane(wallSuggestion.corners!)}>Use detected wall</button>}<button className="button button-secondary" onClick={()=>setWallSuggestion(null)}>Dismiss</button></div></div>}
           </section>
           <div className="upload-strip"><div className="upload-icon"><ImagePlus size={23} strokeWidth={1.4} /></div><div className="upload-copy"><h3>Start with your own space</h3><p>A straight-on photo of your wall works best.</p></div><div className="upload-buttons"><button className="button button-secondary camera-button" onClick={() => cameraInput.current?.click()} disabled={!!busy}><Camera size={16} /><span>Take a photo</span></button><button className="button button-primary" onClick={() => uploadInput.current?.click()} disabled={!!busy}>{busy === 'photo' ? <LoaderCircle className="spin" size={16} /> : <Upload size={16} />}<span>Upload photo</span></button></div></div>
           <div className="privacy-note"><ShieldCheck size={13} /> Your photo stays on your device unless you choose AI analysis.</div>
@@ -303,6 +326,8 @@ export default function App() {
           <div className="selected-specs"><div className="selected-specs-top"><h3>{selected.name.replace(/^LG /, '')}</h3><a href={selected.sourceUrl} target="_blank" rel="noreferrer" aria-label={`View official ${selected.name} information`}><ArrowUpRight size={16} /></a></div><p>{selected.description}</p><div className="spec-row"><span>Dimensions <small>W × H × D</small></span><strong>{selected.widthMm} × {selected.heightMm} × {selected.depthMm} <small>mm</small></strong></div><div className="spec-row"><span>Cooling options</span><strong>{selected.capacities.map(capacity => capacity.replace(' kW', '')).join(' / ')} <small>kW</small></strong></div></div>
           <p className="model-market-note">{selected.marketNote}</p><div className="wall-scale"><label htmlFor="wall-width">{wallPlane?'Marked wall width':'Visible wall width'} <span>approx.</span></label><div className="wall-input"><input id="wall-width" type="number" inputMode="numeric" min="100" max="2000" step="10" value={wallWidth} disabled={!!busy} onChange={e => { const width = Number(e.target.value); setWallWidth(width); if (width >= 100 && width <= 2000) { setPosition(old => clamp({ ...old, width: approximateWidth(selected.widthMm, width) })); setRecommendation(null); } }} onBlur={() => { if (wallWidth < 100 || wallWidth > 2000) { setWallWidth(420); setPosition(old => clamp({ ...old, width: approximateWidth(selected.widthMm, 420) })); } }} /><span>cm</span></div><p>Used for a rough visual scale. Enter the marked wall’s width and height for a better perspective estimate. Clearances aren’t measured.</p></div>
           {wallPlane && <div className="wall-scale"><label htmlFor="wall-height">Marked wall height <span>approx.</span></label><div className="wall-input"><input id="wall-height" type="number" inputMode="numeric" min="100" max="1000" value={wallHeight} onChange={e=>{const value=Number(e.target.value);setWallHeight(value);setPosition(old=>constrainPosition(old,selected.widthMm,selected.heightMm,Math.max(100,wallWidth)/Math.max(100,value)));}} onBlur={()=>{if(wallHeight<100||wallHeight>1000)setWallHeight(250);}}/><span>cm</span></div><p>Measure the rectangle you marked, rather than the entire room.</p></div>}
+          {wallPlane&&<div className="reference-scale"><strong>Scale from a known width</strong><p>Measure a horizontal object on this same wall (such as a window). Enter its width, then mark its two ends.</p><label htmlFor="reference-width">Reference width (cm)</label><input id="reference-width" type="number" min="5" max="1000" value={referenceCm} onChange={e=>setReferenceCm(Number(e.target.value))}/><button className="button button-secondary" disabled={!!busy||markingWall} onClick={()=>setReferencePoints(referencePoints===null?[]:null)}>{referencePoints===null?'Mark reference ends':'Cancel reference'}</button></div>}
+          <p className="scale-source">Scale: {scaleSource}. Dimensions remain approximate.</p>
           <button className="button button-primary save-button" onClick={savePreview} disabled={!!busy}>{busy === 'save' ? <LoaderCircle className="spin" size={16} /> : <ArrowDownToLine size={16} />}Save my preview<ArrowRight size={16} /></button>
           <span className="save-note">A little inspiration to keep or share.</span>
           <div className="catalog-note"><Info size={13} /><p>Official LG Belgium listings and the 2026 LG collection. Preview units are illustrative. Confirm the exact model with your installer.</p></div>
@@ -313,6 +338,6 @@ export default function App() {
     <footer><a className="footer-brand" href={localMode ? '#' : '/'}>liveac<span> STUDIO</span></a><span>Better spaces. Better everyday.</span><div><span>Independent visualization tool</span><span className="footer-dot">·</span><button onClick={() => setHelp(true)}>About this preview <ArrowUpRight size={12} /></button></div></footer>
     {notice && <div className="toast" role="status"><Check size={16} />{notice}<button className="icon-button" aria-label="Dismiss notification" onClick={() => setNotice('')}><X size={15} /></button></div>}
     {error && <div className="error-toast" role="alert"><Info size={19} /><p>{error}</p><button className="icon-button" aria-label="Dismiss error" onClick={() => setError('')}><X size={17} /></button></div>}
-    {(help || consent) && <div className="modal-backdrop" onClick={() => { setHelp(false); setConsent(false); }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" onClick={e => e.stopPropagation()}><button className="modal-close icon-button" aria-label="Close dialog" onClick={() => { setHelp(false); setConsent(false); }}><X size={20} /></button><span className="modal-icon">{consent ? <Sparkles size={25} /> : <Wind size={25} />}</span><div className="eyebrow">A LITTLE GUIDANCE</div><h2 id="modal-title">{consent ? 'A second eye for your space.' : 'Picture the possibilities.'}</h2>{consent ? <><p>{consentTask==='wall'?'To detect a wall, we’ll send this room photo and its dimensions to OpenAI for analysis. You can review and adjust the suggested corners before using them.':'To suggest a location, we’ll send this room photo, your selected unit, the approximate wall width, and any marked wall corners to OpenAI for analysis.'}</p><p>Only continue with a photo you’re comfortable sharing. Your photo is not stored by this app’s server. The AI provider processes it under its own data policy.</p><a className="text-link" href="https://openai.com/policies/privacy-policy/" target="_blank" rel="noreferrer">OpenAI privacy policy <ArrowUpRight size={13} /></a><div className="modal-actions"><button className="button button-secondary" onClick={() => setConsent(false)}>Keep editing</button><button className="button button-primary" onClick={requestRecommendation}><Sparkles size={15}/>Analyze my photo</button></div></> : <><ol className="how-steps"><li><span>01</span><div><strong>Bring your wall into focus.</strong><p>On iPhone, take a straight-on photo or choose one from your library. Include the ceiling and surrounding furniture.</p></div></li><li><span>02</span><div><strong>Find the design that feels like you.</strong><p>Mark the wall’s four corners clockwise from top left to anchor a perspective plane. Enter its width and height, choose an LG unit, and drag it into place. AI wall detection is optional.</p></div></li><li><span>03</span><div><strong>Look at it with fresh eyes.</strong><p>Request an AI aesthetic recommendation, review the suggestion, and save your preview to discuss with your installer.</p></div></li></ol><p className="modal-footnote">This is a two-dimensional visual concept, not a measured AR survey. Product appearance and scale are approximate. LG is a trademark of LG Electronics; LiveAC is an independent tool. <a href="https://unsplash.com/photos/gray-fabric-sofa-near-white-wooden-table-pz-lg1r5X4A" target="_blank" rel="noreferrer">Sample room photo: Unsplash.</a></p><button className="button button-primary" onClick={() => setHelp(false)}>Make yourself at home <ArrowRight size={15} /></button></>}</section></div>}
+    {(help || consent) && <div className="modal-backdrop" onClick={() => { setHelp(false); setConsent(false); }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" onClick={e => e.stopPropagation()}><button className="modal-close icon-button" aria-label="Close dialog" onClick={() => { setHelp(false); setConsent(false); }}><X size={20} /></button><span className="modal-icon">{consent ? <Sparkles size={25} /> : <Wind size={25} />}</span><div className="eyebrow">A LITTLE GUIDANCE</div><h2 id="modal-title">{consent ? 'A second eye for your space.' : 'Picture the possibilities.'}</h2>{consent ? <><p>{consentTask==='local'?'We’ll send this photo to the local vision model in your Docker setup. It stays on that machine; no cloud API or key is used. Review the corners and any width guess before applying them.':consentTask==='wall'?'To detect a wall, we’ll send this room photo and its dimensions to OpenAI for analysis. You can review and adjust the suggested corners before using them.':'To suggest a location, we’ll send this room photo, your selected unit, the approximate wall width, and any marked wall corners to OpenAI for analysis.'}</p><p>{consentTask==='local'?'The model can take a few minutes on a CPU. It cannot measure real dimensions from a photo; width suggestions are uncertain guesses.':'Only continue with a photo you’re comfortable sharing. Your photo is not stored by this app’s server. The AI provider processes it under its own data policy.'}</p>{consentTask!=='local'&&<a className="text-link" href="https://openai.com/policies/privacy-policy/" target="_blank" rel="noreferrer">OpenAI privacy policy <ArrowUpRight size={13} /></a>}<div className="modal-actions"><button className="button button-secondary" onClick={() => setConsent(false)}>Keep editing</button><button className="button button-primary" onClick={requestRecommendation}><Sparkles size={15}/>Analyze my photo</button></div></> : <><ol className="how-steps"><li><span>01</span><div><strong>Bring your wall into focus.</strong><p>On iPhone, take a straight-on photo or choose one from your library. Include the ceiling and surrounding furniture.</p></div></li><li><span>02</span><div><strong>Find the design that feels like you.</strong><p>Mark the wall’s four corners clockwise from top left to anchor a perspective plane. Enter its width and height, choose an LG unit, and drag it into place. AI wall detection is optional.</p></div></li><li><span>03</span><div><strong>Look at it with fresh eyes.</strong><p>Request an AI aesthetic recommendation, review the suggestion, and save your preview to discuss with your installer.</p></div></li></ol><p className="modal-footnote">This is a two-dimensional visual concept, not a measured AR survey. Product appearance and scale are approximate. LG is a trademark of LG Electronics; LiveAC is an independent tool. <a href="https://unsplash.com/photos/gray-fabric-sofa-near-white-wooden-table-pz-lg1r5X4A" target="_blank" rel="noreferrer">Sample room photo: Unsplash.</a></p><button className="button button-primary" onClick={() => setHelp(false)}>Make yourself at home <ArrowRight size={15} /></button></>}</section></div>}
   </>;
 }
