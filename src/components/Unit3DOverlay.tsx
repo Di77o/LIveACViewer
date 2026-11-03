@@ -5,7 +5,11 @@ import type {ACModel} from '../data/catalog';
 export const unitBodyColor=(model:ACModel)=>model.visualVariant==='gallery'?'#bba07b':model.visualVariant==='mirror'?'#35383c':'#d9dcd7';
 const textures=new Map<string,Promise<HTMLImageElement>>();
 function texture(model:ACModel){const key=model.id;let pending=textures.get(key);if(!pending){pending=(async()=>{const image=new Image();image.src=`data:image/svg+xml;charset=utf-8,${encodeURIComponent(unitSvg(model))}`;await image.decode();return image;})();textures.set(key,pending);}return pending;}
-/** One renderer for screen and export avoids CSS projective-image tiling artifacts. */
+/** One renderer for screen and export avoids CSS projective-image tiling artifacts.
+ * CSS keeps this canvas at the photo's size; the bitmap alone scales with DPR.
+ * Using its intrinsic bitmap size for layout moves the painting away from the
+ * normalized projection bounds used by the placement control on Retina screens.
+ */
 export default function Unit3DOverlay({projection,model,width,height}:{projection:Unit3DProjection;model:ACModel;width:number;height:number}){
   const canvas=useRef<HTMLCanvasElement>(null);
   useEffect(()=>{let cancelled=false;const el=canvas.current;if(!el)return;el.dataset.rendered='false';
