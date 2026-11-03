@@ -1,0 +1,20 @@
+services:
+  liveac:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${LIVEAC_BIND_ADDRESS:-127.0.0.1}:${LIVEAC_PORT:-3001}:3001"
+    environment:
+      PORT: "3001"
+      AC_OPENAI_API_KEY: "${AC_OPENAI_API_KEY:-}"
+      AC_OPENAI_MODEL: "${AC_OPENAI_MODEL:-gpt-4.1-mini}"
+    init: true
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true

@@ -1,0 +1,17 @@
+.git
+.github
+node_modules
+dist
+exports
+docs
+tests
+test-results
+playwright-report
+scripts
+**/*.test.ts
+.env
+.env.*
+!.env.example
+*.log
+README.md
+compose*.yaml
