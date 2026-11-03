@@ -1,0 +1,12 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {projectUnit3D,cssQuadTransform} from './unit-3d';
+import {homographyForPlane,type WallPlane} from './wall-plane';
+const flat:WallPlane=[{x:.1,y:.1},{x:.9,y:.1},{x:.9,y:.9},{x:.1,y:.9}];
+const angled:WallPlane=[{x:.2,y:.12},{x:.9,y:.06},{x:.85,y:.82},{x:.23,y:.72}];
+const gallery={widthMm:652,heightMm:652,depthMm:158},position={x:.5,y:.35,width:.2};
+const distance=(a:{x:number;y:number},b:{x:number;y:number},w:number,h:number)=>Math.hypot((a.x-b.x)*w,(a.y-b.y)*h);
+test('a physical Gallery is square head-on even when marked wall aspect is wrong',()=>{const p=projectUnit3D(flat,{...position,y:.5},gallery,1600,900);assert.ok(Math.abs(distance(p.front[0],p.front[1],1600,900)/distance(p.front[0],p.front[3],1600,900)-1)<1e-8);assert.deepEqual(p.dimensions,gallery);});
+test('unit projects along the same horizontal vanishing point as the selected wall',()=>{const p=projectUnit3D(angled,position,gallery,1600,1200),h=homographyForPlane(angled);const vanishing={x:h[0]/h[6],y:h[3]/h[6]},[a,b]=p.front;const residual=(b.x-a.x)*(vanishing.y-a.y)-(b.y-a.y)*(vanishing.x-a.x);assert.ok(Math.abs(residual)<1e-8);assert.ok(p.sides.length>0);});
+test('body depth changes front/side projection and leaves wall anchor fixed',()=>{const a=projectUnit3D(angled,position,gallery,1600,1200,{depthScale:0}),b=projectUnit3D(angled,position,gallery,1600,1200);assert.deepEqual(a.center,b.center);assert.deepEqual(a.back,b.back);assert.notDeepEqual(a.front,b.front);assert.equal(a.sides.length,0);assert.ok(b.sides.length>0);});
+test('viewport scaling preserves normalized 3D geometry and tiny faces can be textured',()=>{const a=projectUnit3D(angled,position,gallery,1600,1200),b=projectUnit3D(angled,position,gallery,800,600);for(let i=0;i<4;i++){assert.ok(Math.abs(a.front[i].x-b.front[i].x)<1e-10);assert.ok(Math.abs(a.front[i].y-b.front[i].y)<1e-10);}assert.match(cssQuadTransform(a.front,800,600),/^matrix3d\(/);});
+test('manual view angle and invalid inputs are handled explicitly',()=>{assert.equal(projectUnit3D(flat,position,gallery,1600,1200,{fovDegrees:65}).camera.source,'manual');assert.throws(()=>projectUnit3D(flat,position,gallery,0,1200));assert.throws(()=>projectUnit3D(flat,position,gallery,1600,1200,{fovDegrees:180}));});

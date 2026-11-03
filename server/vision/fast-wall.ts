@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream, existsSync } from 'node:fs';
 import path from 'node:path';
 import { ApiError } from '../validation.js';
+import { refineWallWithLines } from './wall-lines.js';
 import { wallCandidates } from './wall-regions.js';
 
 export const MODEL_NAME='UPerNet / ConvNeXt-Tiny · ADE20K · CPU';
@@ -51,7 +52,7 @@ export async function detectFastWall(image:string){
   const inferenceMs=performance.now()-inferenceStart;
   const tensor=output.logits;const [,classes,height,width]=tensor.dims;
   const mask=wallMaskFromLogits(tensor.data as Float32Array,width,height,classes);
-  const candidates=wallCandidates(mask,width,height);
+  const candidates=wallCandidates(mask,width,height).map(candidate=>{const refined=refineWallWithLines(candidate.corners,pixels,512,512,3);return {...candidate,corners:refined.corners,lines:refined.lines,lineRefined:refined.refined};});
   const first=candidates[0];
   const rgba=Buffer.alloc(mask.length*4);
   for(let p=0;p<mask.length;p++)if(mask[p]){rgba[p*4]=90;rgba[p*4+1]=165;rgba[p*4+2]=110;rgba[p*4+3]=150;}
@@ -62,6 +63,7 @@ export async function detectFastWall(image:string){
     summary:first?'Suggested wall plane applied. Adjust its numbered corners, or redraw it if it covers the wrong surface.':'No clear wall region found. Mark four corners manually or try a clearer room photo.',
     warnings:['This outline is a semantic wall estimate, not a measured 3D plane. Adjacent walls and objects may need correction.','Use a measured reference for real-world scale.'],
     widthGuess:null,provider:'local-segmentation',
+    lines:first?.lines||[],lineRefined:first?.lineRefined||false,
     candidates,wallMask:`data:image/png;base64,${png.toString('base64')}`,
     timingMs:Math.round(performance.now()-started),inferenceMs:Math.round(inferenceMs),
   };

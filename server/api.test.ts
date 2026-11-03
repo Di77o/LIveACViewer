@@ -139,3 +139,10 @@ test('wall detection and recommendations share the AI request rate limit', async
   assert.equal(response.headers.get('retry-after'), '600');
   assert.equal((await response.json() as { code: string }).code, 'RATE_LIMITED');
 });
+
+test('line refinement validates an existing plane and works without an external AI provider',async()=>{
+  const invalid=await originalFetch(`${base}/api/refine-wall-lines`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,wallCorners:[]})});assert.equal(invalid.status,400);
+  const {readFile}=await import('node:fs/promises');const photo='data:image/jpeg;base64,'+(await readFile('public/sample-room.jpg')).toString('base64');
+  const result=await originalFetch(`${base}/api/refine-wall-lines`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:photo,imageWidth:1600,imageHeight:1200,wallCorners:[{x:.1,y:.1},{x:.85,y:.1},{x:.85,y:.6},{x:.1,y:.6}]})});
+  assert.equal(result.status,200);const output=await result.json() as {corners:unknown[];lines:unknown[];refined:boolean};assert.equal(output.corners.length,4);assert.ok(Array.isArray(output.lines));assert.equal(typeof output.refined,'boolean');
+});

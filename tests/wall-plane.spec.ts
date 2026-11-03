@@ -21,6 +21,7 @@ async function markWall(page: Page) {
   await page.getByRole('button', { name: 'Mark wall', exact: true }).click();
   await clickCorners(page);
   await expect(page.getByText('PLANE SET', { exact: true })).toBeVisible();
+  await page.getByLabel('3D unit depth').uncheck();
   await page.getByLabel(/Keep original unit proportions/).uncheck();
   await expect(page.locator('.unit-plane')).toHaveAttribute('style', /matrix3d\(/);
 }
@@ -149,7 +150,8 @@ test('mocked wall detection requests consent, previews corners, and waits for ex
   await expect(page.locator('.unit-plane')).toHaveAttribute('style', 'transform: none;');
   await page.getByRole('button', { name: 'Use detected wall' }).click();
   await expect(page.getByText('PLANE SET', { exact: true })).toBeVisible();
-  await expect(page.getByLabel(/Keep original unit proportions/)).toBeChecked();
+  await expect(page.getByLabel('3D unit depth')).toBeChecked();
+  await expect(page.locator('.unit-depth-scene')).toBeVisible();
   await expect(page.locator('.unit-plane')).toHaveAttribute('style', 'transform: none;');
   await expect(page.locator('button.wall-corner')).toHaveCount(4);
   await expect(page.getByRole('button', { name: 'Use detected wall' })).toHaveCount(0);

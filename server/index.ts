@@ -1,3 +1,6 @@
+import sharp from 'sharp';
+import {refineWallWithLines} from './vision/wall-lines.js';
+import {validateWallPlane} from '../src/lib/wall-plane.js';
 import express, { type ErrorRequestHandler } from 'express';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -113,6 +116,16 @@ app.post('/api/recommend', async (req, res, next) => {
       next(new ApiError(504, 'AI_TIMEOUT', 'The AI took too long to respond. Please try again.'));
     } else next(error);
   }
+});
+
+app.post('/api/refine-wall-lines',async(req,res,next)=>{
+  try {
+    const photo=validatePhoto(req.body,true);
+    if(!validateWallPlane(req.body.wallCorners))throw new ApiError(400,'INVALID_WALL','Mark a valid wall before aligning its edges.');
+    let pixels:Buffer;
+    try{pixels=await sharp(Buffer.from(photo.image.split(',')[1],'base64'),{limitInputPixels:16_000_000}).rotate().flatten({background:'#fff'}).toColourspace('srgb').removeAlpha().resize(512,512,{fit:'fill',kernel:'cubic'}).raw().toBuffer();}catch{throw new ApiError(400,'INVALID_PHOTO','Choose a supported room photo.');}
+    res.json(refineWallWithLines(req.body.wallCorners,pixels,512,512,3));
+  }catch(error){next(error);}
 });
 
 app.get('/api/local-status',(_req,res)=>{res.json(detectorStatus());});

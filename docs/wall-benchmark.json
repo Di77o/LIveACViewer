@@ -1,9 +1,15 @@
 {
+  "hardware": {
+    "platform": "linux",
+    "arch": "x64",
+    "cpu": "INTEL(R) XEON(R) PLATINUM 8573C",
+    "availableParallelism": 4
+  },
   "model": "UPerNet / ConvNeXt-Tiny INT8, CPU, 512px",
-  "warmupMs": 1291,
+  "warmupMs": 12127,
   "threads": "2",
-  "p50Ms": 835,
-  "p95Ms": 1036,
+  "p50Ms": 1890,
+  "p95Ms": 9159,
   "labelledCases": 0,
   "passed": 0,
   "metric": "Coarse suggested-plane IoU >= 0.5 against hand-marked reference quad (not pixel accuracy or installation suitability). Small fixtures are smoke tests, not evidence of 90% customer acceptance.",
@@ -11,9 +17,9 @@
     {
       "image": "public/sample-room.jpg",
       "warmMs": [
-        1036,
-        864,
-        899
+        1432,
+        3132,
+        2621
       ],
       "planeFound": true,
       "planeIoU": null,
@@ -24,25 +30,25 @@
           "y": 0.0546875
         },
         {
-          "x": 0.890625,
-          "y": 0.0078125
+          "x": 0.8660959727542894,
+          "y": 0.009103501433984775
         },
         {
-          "x": 0.8046875,
-          "y": 0.4921875
+          "x": 0.8481163543185845,
+          "y": 0.5087963881363462
         },
         {
           "x": 0,
-          "y": 0.625
+          "y": 0.6185274333020202
         }
       ]
     },
     {
       "image": "tests/fixtures/rooms/open-plan.jpg",
       "warmMs": [
-        849,
-        815,
-        827
+        1890,
+        1575,
+        9159
       ],
       "planeFound": true,
       "planeIoU": null,
@@ -69,9 +75,9 @@
     {
       "image": "tests/fixtures/rooms/living-room.jpg",
       "warmMs": [
-        824,
-        822,
-        835
+        5795,
+        1189,
+        1106
       ],
       "planeFound": true,
       "planeIoU": null,
@@ -96,10 +102,5 @@
       ]
     }
   ],
-  "hardware": {
-    "platform": "linux",
-    "arch": "x64",
-    "cpu": "INTEL(R) XEON(R) PLATINUM 8573C",
-    "availableParallelism": 4
-  }
+  "resourceNote": "Line-assisted detector on a shared development host with concurrent app startup; latency varies under contention. This is a smoke benchmark, not a customer-service latency guarantee."
 }

@@ -212,7 +212,7 @@ The app warms the model at startup. The server includes the model before accepti
 
 ### Speed and quality validation
 
-The INT8 pipeline measured 0.84 seconds median and 1.04 seconds slowest across nine warm runs on three public interiors, with a separate 1.29-second startup/warmup. A real browser-to-Docker request on the bundled sample completed detector work in 1.72 seconds, including a recompressed photo. These observations use two inference threads on the cloud development machine; they are not a latency guarantee for your PC. The earlier FP32 version had much larger latency spikes under contention and was not retained as the default. See `docs/wall-benchmark.json` for reproducible multi-image measurements and resource notes. Run:
+The original INT8 baseline measured 0.84 seconds median and 1.04 seconds slowest across nine warm runs on three public interiors, with a separate 1.29-second startup/warmup. The newer line-assisted run is recorded separately in the current benchmark report; the shared development host showed substantial variability, so the baseline is not a guarantee for the updated pipeline. A real browser-to-Docker request on the bundled sample completed detector work in 1.72 seconds, including a recompressed photo. These observations use two inference threads on the cloud development machine; they are not a latency guarantee for your PC. The earlier FP32 version had much larger latency spikes under contention and was not retained as the default. See `docs/wall-benchmark.json` for reproducible multi-image measurements and resource notes. Run:
 
 ```sh
 npm run model:fetch
@@ -236,3 +236,13 @@ A photo alone has no unique metric scale. The fast segmentation model intentiona
 ## License
 
 This update uses the custom [Private, Non-Commercial Use License](LICENSE). Private personal use and modification are allowed; commercial/professional use, public redistribution, and public hosted copies require prior written permission. Third-party assets keep their own terms. Earlier versions released under the Unlicense keep their previously granted rights.
+
+## Wall lines and 3D unit depth
+
+Wall segmentation is now followed by constrained Sobel/Hough line voting near the detected boundaries. Long ceiling seams and vertical wall edges can refine the quad; strong interior TV, picture and furniture edges are kept out by the boundary band and support requirements. Unsupported boundaries remain as detected. This adds a small geometric post-process, not another AI model. **Show detected edge guides** reveals the supporting lines. After manually marking or correcting a wall, **Snap to edges** refines those same corners without running the segmentation model again. Refinement can still select a cabinet/shelf edge when the true wall boundary is hidden; it does not establish actual floor-to-ceiling height.
+
+With a wall marked, **3D unit depth** is enabled by default. The unit is represented by a dimensioned three-dimensional body; its front and visible sides follow a pinhole-camera estimate derived from the wall directions. The center remains anchored to the selected wall, and the front projects toward its horizontal vanishing point. Width, height and depth use the selected product's physical ratios, so Gallery remains a square physical front even though it can look foreshortened in a photograph. Incorrect wall-height estimates do not independently stretch the product's front.
+
+The camera is estimated from orthogonal vanishing directions when stable, otherwise a 55° horizontal view is assumed. **Adjust the camera view** lets you correct it. A single photo cannot determine a unique camera or measured room depth; corners, lens distortion and hidden boundaries all affect the result. This is visual planning, not a measured 3D room survey. The preview and exported JPEG use the same projected faces. No WebGL/GPU is required for this lightweight mesh projection.
+
+Disable **3D unit depth** to return to the earlier proportion-preserving illustration or flat wall projection. Dimension-based bodies/front textures are illustrative. Verified official Revit download links, matching family names, and conversion/embedding limitations are documented in [LG 3D assets](docs/LG-3D-ASSETS.md). Actual manufacturer CAD files have not been bundled without confirmed web-embedding rights.

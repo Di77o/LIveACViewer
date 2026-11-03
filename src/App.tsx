@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { ArrowDownToLine, ArrowRight, ArrowUpRight, Camera, Check, ChevronDown, Expand, Eye, EyeOff, ImagePlus, Info, Leaf, LoaderCircle, Move, RotateCcw, ShieldCheck, Sparkles, Upload, Wind, X } from 'lucide-react';
 import { models, type ACModel } from './data/catalog';
+import Unit3DOverlay, {unitBodyColor} from './components/Unit3DOverlay';
+import {projectUnit3D,drawUnit3D,type Unit3DProjection} from './lib/unit-3d';
 import { widthFromReference } from './lib/reference-scale';
 import { proportionalUnit } from './lib/proportional-unit';
 import WallOverlay from './components/WallOverlay';
@@ -11,8 +13,9 @@ import UnitArtwork, { unitSvg } from './components/UnitArtwork';
 import { approximateWidth, constrainPosition, unitHeight, type Position } from './lib/placement';
 import { loadImage, preparePhoto } from './lib/photo';
 
+type GuideLine={start:Point;end:Point;strength:number;kind:'horizontal'|'vertical'};
 type Recommendation = Position & { summary: string; reasoning: string[]; warnings: string[]; confidence: 'low' | 'medium' | 'high' };
-type WallSuggestion = { corners: WallPlane | null; confidence: 'low'|'medium'|'high'; summary: string; warnings: string[]; autoApplied?:boolean; timingMs?:number; wallMask?:string; candidates?: {corners:WallPlane}[]; widthGuess?: {minCm:number;maxCm:number;basis:string}|null };
+type WallSuggestion = { corners: WallPlane | null; confidence: 'low'|'medium'|'high'; summary: string; warnings: string[]; autoApplied?:boolean; timingMs?:number; wallMask?:string; lines?:GuideLine[];lineRefined?:boolean; candidates?: {corners:WallPlane;lines?:GuideLine[]}[]; widthGuess?: {minCm:number;maxCm:number;basis:string}|null };
 type Photo = { src: string; width: number; height: number; isSample: boolean; name: string };
 const staticHosted = Boolean((window as Window & { __LIVEAC_STATIC__?: boolean }).__LIVEAC_STATIC__);
 const localMode = staticHosted || window.location.protocol === 'file:' || Boolean((window as Window & { __LIVEAC_LOCAL__?: boolean }).__LIVEAC_LOCAL__);
@@ -26,6 +29,10 @@ function Unit({ model, className = '' }: { model: ACModel; className?: string })
 export default function App() {
   const [selected, setSelected] = useState(models[0]);
   const [photo, setPhoto] = useState<Photo>(sample);
+  const [useDepth,setUseDepth]=useState(true);
+  const [cameraView,setCameraView]=useState<number|null>(null);
+  const [wallLines,setWallLines]=useState<GuideLine[]>([]);
+  const [showLines,setShowLines]=useState(true);
   const [preserveProportions,setPreserveProportions]=useState(true);
   const [wallWidth, setWallWidth] = useState(420);
   const [referencePoints,setReferencePoints]=useState<Point[]|null>(null);
@@ -59,6 +66,8 @@ export default function App() {
   const photoVersion = useRef(0);
   const drag = useRef<{ pointer: number; startX: number; startY: number; original: Position } | null>(null);
   const aspect = photo.width / photo.height;
+  let depthProjection:Unit3DProjection|null=null;
+  if(wallPlane&&useDepth){try{depthProjection=projectUnit3D(wallPlane,position,selected,photo.width,photo.height,cameraView===null?{}:{fovDegrees:cameraView});}catch{/* Fall back to the proportion-preserving illustration if the estimate degenerates. */}}
   const anchored = wallPlane&&preserveProportions?proportionalUnit(wallPlane,position,aspect):null;
   const displayPosition=anchored||position;
   const planeAspect = Math.max(100, wallWidth) / Math.max(100, wallHeight);
@@ -110,15 +119,16 @@ export default function App() {
     return () => { document.removeEventListener('keydown', trap); document.body.style.overflow = previousOverflow; previous?.focus(); };
   }, [help, consent]);
 
-  const clamp = (next: Position, model = selected) => constrainPosition(next, model.widthMm, model.heightMm, wallPlane ? planeAspect : aspect);
+  const clamp = (next: Position, model = selected) => constrainPosition(next, model.widthMm, model.heightMm, wallPlane ? depthProjection?.camera.wallAspect||planeAspect : aspect);
   function applyPlane(plane: WallPlane) {
+    setWallLines([]);
     setWallPlane(plane); setMarkingWall(false); setDraftCorners([]); setWallSuggestion(null);
     setPosition(constrainPosition({x:.5,y:.22,width:approximateWidth(selected.widthMm,wallWidth)},selected.widthMm,selected.heightMm,planeAspect));
     setShowUnit(true); setRecommendation(null); setRecommendationApplied(false);
     setNotice('Wall plane set. The unit now follows its perspective. Drag the numbered corners to refine it.');
   }
   function clearPlane() {
-    setReferencePoints(null);setWallPlane(null); setWallSuggestion(null); setMarkingWall(false); setDraftCorners([]); setRecommendation(null);
+    setWallLines([]);setReferencePoints(null);setWallPlane(null); setWallSuggestion(null); setMarkingWall(false); setDraftCorners([]); setRecommendation(null);
     setPosition(constrainPosition({x:.5,y:.22,width:approximateWidth(selected.widthMm,wallWidth)},selected.widthMm,selected.heightMm,aspect));
   }
   function markCorner(event: React.MouseEvent<HTMLDivElement>) {
@@ -167,7 +177,7 @@ export default function App() {
       const next = await preparePhoto(file);
       photoVersion.current += 1;
       setPhoto({ ...next, name: file.name, isSample: false });
-      setWallPlane(null);setMarkingWall(false);setDraftCorners([]);setWallSuggestion(null);setWallMask(null);setReferencePoints(null);setScaleSource('Manual estimate');
+      setWallPlane(null);setWallLines([]);setMarkingWall(false);setDraftCorners([]);setWallSuggestion(null);setWallMask(null);setReferencePoints(null);setScaleSource('Manual estimate');
       setPosition(constrainPosition({ x: 0.5, y: 0.22, width: approximateWidth(selected.widthMm, wallWidth) }, selected.widthMm, selected.heightMm, next.width / next.height));
       setRecommendation(null); setRecommendationApplied(false); setShowUnit(true);
       setNotice('Your room is ready. Drag the unit to explore a position.');
@@ -220,6 +230,7 @@ export default function App() {
       if(task!=='placement') {
         if(task==='local'&&result.wall.provider==='local-segmentation') {
           if(result.wall.corners)applyPlane(result.wall.corners);
+          setWallLines(result.wall.lines||[]);
           setWallMask(result.wall.wallMask||null);setShowMask(false);
           setWallSuggestion({...result.wall,corners:null,autoApplied:Boolean(result.wall.corners)});
           setNotice(result.wall.corners?'Wall plane suggested. Drag the corners or redraw it to correct the outline.':'No clear wall found. Mark four corners manually.');
@@ -230,6 +241,18 @@ export default function App() {
       setNotice('Your recommendation is ready to review.');
     } catch (error) { setError(error instanceof Error && error.name === 'TimeoutError' ? 'The recommendation took too long. Please try again.' : error instanceof Error ? error.message : 'Could not connect to the recommendation service.'); }
     finally { setBusy(null); }
+  }
+  async function snapWallEdges(){
+    if(!wallPlane)return;
+    if(localMode){setError('Edge alignment runs in the Docker version. You can still drag the corners here.');return;}
+    setBusy('wall');setError('');
+    try{
+      const image=photo.src.startsWith('data:')?photo.src:await(async()=>{const r=await fetch(photo.src);return(await preparePhoto(new File([await r.blob()],'room.jpg',{type:'image/jpeg'}))).src;})();
+      const response=await fetch('/api/refine-wall-lines',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image,imageWidth:photo.width,imageHeight:photo.height,wallCorners:wallPlane}),signal:AbortSignal.timeout(10000)});
+      const result=await response.json();if(!response.ok)throw new Error(result.error||'Could not align wall edges.');
+      setWallPlane(result.corners);setWallLines(result.lines);setRecommendation(null);
+      setNotice(result.refined?'Wall outline aligned with nearby long edges. You can still adjust the corners.':'No reliable closer edges found. Your corners were kept.');
+    }catch(error){setError(error instanceof Error?error.message:'Could not align wall edges.');}finally{setBusy(null);}
   }
   async function savePreview() {
     setBusy('save'); setError('');
@@ -247,7 +270,8 @@ export default function App() {
         const top = position.y * image.naturalHeight - h / 2;
         ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.25)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 7;
         const unitImage=await loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(unitSvg(selected))}`);
-        if(wallPlane&&!preserveProportions) drawProjectedImage(ctx,unitImage,wallPlane,position,selected.heightMm/selected.widthMm*planeAspect,image.naturalWidth,image.naturalHeight);
+        if(depthProjection){ctx.shadowColor='transparent';drawUnit3D(ctx,unitImage,depthProjection,image.naturalWidth,image.naturalHeight,{bodyColor:unitBodyColor(selected)});}
+        else if(wallPlane&&!preserveProportions) drawProjectedImage(ctx,unitImage,wallPlane,position,selected.heightMm/selected.widthMm*planeAspect,image.naturalWidth,image.naturalHeight);
         else if(anchored){const aw=anchored.width*image.naturalWidth;const ah=aw*selected.heightMm/selected.widthMm;ctx.translate(anchored.x*image.naturalWidth,anchored.y*image.naturalHeight);ctx.rotate(anchored.angle);ctx.drawImage(unitImage,-aw/2,-ah/2,aw,ah);}
         else if (selected.imageUrl) ctx.drawImage(unitImage, left, top, w, h);
         else { ctx.fillStyle = selected.finish.toLowerCase().includes('black') ? '#323432' : '#f3f1ec'; ctx.beginPath(); ctx.roundRect(left, top, w, h, 5); ctx.fill(); }
@@ -293,13 +317,15 @@ export default function App() {
             <div ref={stage} className={`room-stage ${busy === 'ai' || busy==='wall' ? 'analyzing' : ''} ${markingWall||referencePoints!==null?'marking-wall':''}`} onClick={markCorner} style={{ aspectRatio: `${photo.width} / ${photo.height}`, ...(expanded ? { width: `min(92vw, calc((100dvh - 120px) * ${aspect}))` } : {}) }}>
               <img className="room-photo" src={photo.src} alt={photo.isSample ? 'Example sunlit living room with a clear wall above the gallery of photographs' : 'Your uploaded room'} draggable={false} />
               {showMask&&wallMask&&<img className="wall-mask-preview" src={wallMask} alt="Detected wall pixels" draggable={false}/>}
-              <div className="unit-plane" style={{ transform: wallPlane&&!preserveProportions ? wallTransform(wallPlane,stageSize.width,stageSize.height) : 'none' }}>
-              {showUnit && <div className={`placed-unit ${markingWall||referencePoints!==null?'unit-marking':''}`} role="button" tabIndex={0} aria-label="Air conditioner placement. Drag to move, or use arrow keys." style={{ left: `${displayPosition.x * 100}%`, top: `${displayPosition.y * 100}%`, width: `${displayPosition.width * 100}%`, height: `${displayHeight * 100}%`, transform: `translate(-50%,-50%) rotate(${anchored?.angle||0}rad)` }} onPointerDown={dragStart} onPointerMove={dragMove} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} onKeyDown={event => {
+              {showUnit&&depthProjection&&<Unit3DOverlay projection={depthProjection} model={selected} width={stageSize.width} height={stageSize.height}/>}
+              <div className="unit-plane" style={{ transform: wallPlane&&!preserveProportions&&!depthProjection ? wallTransform(wallPlane,stageSize.width,stageSize.height) : 'none' }}>
+              {showUnit && <div className={`placed-unit ${markingWall||referencePoints!==null?'unit-marking':''}`} role="button" tabIndex={0} aria-label="Air conditioner placement. Drag to move, or use arrow keys." style={depthProjection?{left:`${depthProjection.bounds.left*100}%`,top:`${depthProjection.bounds.top*100}%`,width:`${depthProjection.bounds.width*100}%`,height:`${depthProjection.bounds.height*100}%`,transform:'none'}:{ left: `${displayPosition.x * 100}%`, top: `${displayPosition.y * 100}%`, width: `${displayPosition.width * 100}%`, height: `${displayHeight * 100}%`, transform: `translate(-50%,-50%) rotate(${anchored?.angle||0}rad)` }} onPointerDown={dragStart} onPointerMove={dragMove} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} onKeyDown={event => {
                 const deltas: Record<string, [number, number]> = { ArrowLeft: [-.01, 0], ArrowRight: [.01, 0], ArrowUp: [0, -.01], ArrowDown: [0, .01] };
                 if (deltas[event.key]) { event.preventDefault(); const [x, y] = deltas[event.key]; setPosition(old => clamp({ ...old, x: old.x + x, y: old.y + y })); setRecommendationApplied(false); }
-              }}><UnitArtwork model={selected} /><span className="unit-handle"><Move size={11} /></span></div>}
+              }}>{!depthProjection&&<UnitArtwork model={selected} />}<span className="unit-handle"><Move size={11} /></span></div>}
               </div>
-              <WallOverlay plane={wallPlane} draft={draftCorners} marking={markingWall} suggestion={wallSuggestion?.corners||null} onChange={plane=>{setWallPlane(plane);setRecommendation(null);}} />
+              {showLines&&wallLines.length>0&&<svg className="wall-line-guides" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Detected ceiling and wall edge guides">{wallLines.map((line,i)=><line key={i} x1={line.start.x*1000} y1={line.start.y*1000} x2={line.end.x*1000} y2={line.end.y*1000}/>)}</svg>}
+              <WallOverlay plane={wallPlane} draft={draftCorners} marking={markingWall} suggestion={wallSuggestion?.corners||null} onChange={plane=>{setWallPlane(plane);setWallLines([]);setRecommendation(null);}} />
               {referencePoints!==null&&<div className="marking-instruction" role="status">Tap {referencePoints.length?'the other':'the first'} end of your horizontal reference</div>}
               {markingWall && <div className="marking-instruction" role="status">Tap corner {draftCorners.length+1}: {['top left','top right','bottom right','bottom left'][draftCorners.length]}</div>}
               <div className="photo-label"><span /> LIVE PREVIEW</div>
@@ -310,14 +336,16 @@ export default function App() {
           <div className="placement-toolbar"><span className="drag-hint"><Move size={15} /> Drag the unit to find your fit</span><div className="size-control"><label htmlFor="unit-size">Visual size</label><input id="unit-size" type="range" min="8" max="55" value={Math.round(position.width * 100)} onChange={e => changeWidth(Number(e.target.value) / 100)} disabled={!!busy} /><span>{Math.round(position.width * 100)}%</span></div></div>
           <section className="wall-tools" aria-label="Wall perspective tools">
             <div className="wall-tools-title"><Move size={16}/><div><strong>{wallPlane?'Anchored to your wall':'Give your wall a little perspective.'}</strong><p>{markingWall?'Mark a visible rectangle: top left → top right → bottom right → bottom left.':wallPlane?'Drag the numbered corners to refine the plane. Units follow the wall’s angle.':'Mark four wall corners, or ask AI for a starting point you can adjust.'}</p></div>{wallPlane&&<span className="plane-active"><Check size={11}/> PLANE SET</span>}</div>
-            <div className="wall-tools-actions">{markingWall?<><button className="button button-secondary" onClick={()=>setDraftCorners(old=>old.slice(0,-1))} disabled={!draftCorners.length}>Undo corner</button><button className="button button-secondary" onClick={()=>{setMarkingWall(false);setDraftCorners([]);}}>Cancel marking</button></>:<><button className="button button-secondary" onClick={()=>{setMarkingWall(true);setDraftCorners([]);setWallSuggestion(null);}} disabled={!!busy}><Move size={14}/>{wallPlane?'Redraw wall':'Mark wall'}</button><button className="button button-secondary" onClick={()=>beginAi('local')} disabled={!!busy}><Sparkles size={14}/>Find wall</button><button className="button button-secondary" onClick={()=>beginAi('wall')} disabled={!!busy}>{busy==='wall'?<LoaderCircle className="spin" size={14}/>:<Sparkles size={14}/>}Detect wall with AI</button>{wallPlane&&<button className="text-button" onClick={clearPlane}>Remove plane</button>}</>}</div>
-            {wallPlane&&<label className="proportion-toggle"><input type="checkbox" checked={preserveProportions} onChange={e=>setPreserveProportions(e.target.checked)}/>Keep original unit proportions <span>(recommended; Gallery stays square)</span></label>}
+            <div className="wall-tools-actions">{markingWall?<><button className="button button-secondary" onClick={()=>setDraftCorners(old=>old.slice(0,-1))} disabled={!draftCorners.length}>Undo corner</button><button className="button button-secondary" onClick={()=>{setMarkingWall(false);setDraftCorners([]);}}>Cancel marking</button></>:<><button className="button button-secondary" onClick={()=>{setMarkingWall(true);setDraftCorners([]);setWallSuggestion(null);}} disabled={!!busy}><Move size={14}/>{wallPlane?'Redraw wall':'Mark wall'}</button><button className="button button-secondary" onClick={()=>beginAi('local')} disabled={!!busy}><Sparkles size={14}/>Find wall</button><button className="button button-secondary" onClick={()=>beginAi('wall')} disabled={!!busy}>{busy==='wall'?<LoaderCircle className="spin" size={14}/>:<Sparkles size={14}/>}Detect wall with AI</button>{wallPlane&&<button className="button button-secondary" disabled={!!busy} onClick={snapWallEdges}>Snap to edges</button>}{wallPlane&&<button className="text-button" onClick={clearPlane}>Remove plane</button>}</>}</div>
+            {wallPlane&&<div className="depth-controls"><label className="proportion-toggle"><input type="checkbox" checked={useDepth} onChange={e=>setUseDepth(e.target.checked)}/>3D unit depth <span>dimension-based model</span></label>{useDepth&&<><p>{depthProjection?`${selected.depthMm} mm body depth · estimated camera view · physical unit proportions`:'Refine the wall corners for a stable 3D view. Showing a flat illustration.'}</p><details><summary>Adjust the camera view</summary><label htmlFor="camera-view">View angle {Math.round(cameraView??depthProjection?.camera.fovDegrees??55)}°</label><input id="camera-view" type="range" min="30" max="95" value={cameraView??depthProjection?.camera.fovDegrees??55} onChange={e=>setCameraView(Number(e.target.value))}/><button className="text-button" onClick={()=>setCameraView(null)}>Reset estimated view</button><p>A single photo does not determine a unique camera or room depth. Adjust this only if the sides look wrong.</p></details></>}</div>}
+            {wallLines.length>0&&<label className="proportion-toggle"><input type="checkbox" checked={showLines} onChange={e=>setShowLines(e.target.checked)}/>Show detected edge guides</label>}
+            {wallPlane&&!useDepth&&<label className="proportion-toggle"><input type="checkbox" checked={preserveProportions} onChange={e=>setPreserveProportions(e.target.checked)}/>Keep original unit proportions <span>(recommended; Gallery stays square)</span></label>}
             {!localMode&&<p className="local-detector-note">{localReady?'Fast wall detector ready · CPU · no API key needed':localState==='loading'?'Warming the fast wall detector…':'Wall detector unavailable. Rebuild Docker to install its model.'}</p>}
             {wallMask&&<label className="proportion-toggle"><input type="checkbox" checked={showMask} onChange={e=>setShowMask(e.target.checked)}/>Show detected wall area</label>}
-            {wallSuggestion&&<div className="wall-suggestion"><strong>{wallSuggestion.autoApplied?'Suggested plane — adjust the corners':'Wall detection result'}{wallSuggestion.timingMs!==undefined?` · ${(wallSuggestion.timingMs/1000).toFixed(1)} s`:''}</strong><p>{wallSuggestion.summary}</p>{(wallSuggestion.candidates?.length||0)>1&&<div className="wall-candidate-buttons">{wallSuggestion.candidates!.map((candidate,i)=><button key={i} className="button button-secondary" onClick={()=>{const result=wallSuggestion;applyPlane(candidate.corners);setWallSuggestion({...result,corners:null,autoApplied:true});}}>Wall {i+1}</button>)}</div>}{wallSuggestion.warnings.map((warning,i)=><p key={i}>{warning}</p>)}{wallSuggestion.widthGuess&&<div className="width-guess"><strong>Rough width guess: {wallSuggestion.widthGuess.minCm}–{wallSuggestion.widthGuess.maxCm} cm · low confidence</strong><p>{wallSuggestion.widthGuess.basis}</p><p>Object sizes are assumed. Use a measured reference for a dependable scale.</p><button className="button button-secondary" onClick={()=>{const width=Math.round((wallSuggestion.widthGuess!.minCm+wallSuggestion.widthGuess!.maxCm)/2);setWallWidth(width);setScaleSource('AI guess — low confidence');setPosition(constrainPosition({...position,width:approximateWidth(selected.widthMm,width)},selected.widthMm,selected.heightMm,wallPlane?width/Math.max(100,wallHeight):aspect));}}>Use range midpoint as a rough scale</button></div>}<div>{wallSuggestion.corners&&<button className="button button-primary" onClick={()=>applyPlane(wallSuggestion.corners!)}>Use detected wall</button>}<button className="button button-secondary" onClick={()=>setWallSuggestion(null)}>Dismiss</button></div></div>}
+            {wallSuggestion&&<div className="wall-suggestion"><strong>{wallSuggestion.autoApplied?'Suggested plane — adjust the corners':'Wall detection result'}{wallSuggestion.timingMs!==undefined?` · ${(wallSuggestion.timingMs/1000).toFixed(1)} s`:''}</strong><p>{wallSuggestion.summary}</p>{(wallSuggestion.candidates?.length||0)>1&&<div className="wall-candidate-buttons">{wallSuggestion.candidates!.map((candidate,i)=><button key={i} className="button button-secondary" onClick={()=>{const result=wallSuggestion;applyPlane(candidate.corners);setWallLines(candidate.lines||[]);setWallSuggestion({...result,corners:null,autoApplied:true});}}>Wall {i+1}</button>)}</div>}{wallSuggestion.warnings.map((warning,i)=><p key={i}>{warning}</p>)}{wallSuggestion.widthGuess&&<div className="width-guess"><strong>Rough width guess: {wallSuggestion.widthGuess.minCm}–{wallSuggestion.widthGuess.maxCm} cm · low confidence</strong><p>{wallSuggestion.widthGuess.basis}</p><p>Object sizes are assumed. Use a measured reference for a dependable scale.</p><button className="button button-secondary" onClick={()=>{const width=Math.round((wallSuggestion.widthGuess!.minCm+wallSuggestion.widthGuess!.maxCm)/2);setWallWidth(width);setScaleSource('AI guess — low confidence');setPosition(constrainPosition({...position,width:approximateWidth(selected.widthMm,width)},selected.widthMm,selected.heightMm,wallPlane?width/Math.max(100,wallHeight):aspect));}}>Use range midpoint as a rough scale</button></div>}<div>{wallSuggestion.corners&&<button className="button button-primary" onClick={()=>applyPlane(wallSuggestion.corners!)}>Use detected wall</button>}<button className="button button-secondary" onClick={()=>setWallSuggestion(null)}>Dismiss</button></div></div>}
           </section>
           <div className="upload-strip"><div className="upload-icon"><ImagePlus size={23} strokeWidth={1.4} /></div><div className="upload-copy"><h3>Start with your own space</h3><p>A straight-on photo of your wall works best.</p></div><div className="upload-buttons"><button className="button button-secondary camera-button" onClick={() => cameraInput.current?.click()} disabled={!!busy}><Camera size={16} /><span>Take a photo</span></button><button className="button button-primary" onClick={() => uploadInput.current?.click()} disabled={!!busy}>{busy === 'photo' ? <LoaderCircle className="spin" size={16} /> : <Upload size={16} />}<span>Upload photo</span></button></div></div>
-          <div className="privacy-note"><ShieldCheck size={13} /> Your photo stays on your device unless you choose AI analysis.</div>
+          <div className="privacy-note"><ShieldCheck size={13} /> Wall detection and edge alignment use this app’s server. Cloud AI asks before sharing.</div>
           <input ref={cameraInput} className="visually-hidden" type="file" accept="image/*" capture="environment" aria-label="Take a room photo" onChange={e => choosePhoto(e.target.files?.[0])} />
           <input ref={uploadInput} className="visually-hidden" type="file" accept="image/*" aria-label="Upload a room photo" onChange={e => choosePhoto(e.target.files?.[0])} />
           <section className="ai-card">
